@@ -1,7 +1,6 @@
 import {
   type Group,
   type Node,
-  type Rule,
   type Tri,
   isGroup,
   isContentField,
@@ -40,11 +39,11 @@ export function evalGroup(group: Group, ctx: EvalContext): Tri {
 }
 
 function evalNode(node: Node, ctx: EvalContext): Tri {
-  return isGroup(node) ? evalGroup(node, ctx) : evalRule(node as Rule, ctx);
+  return isGroup(node) ? evalGroup(node, ctx) : evalRule(node, ctx);
 }
 
 /** True if the query contains at least one content (body) rule. */
 export function queryTouchesBody(node: Node): boolean {
   if (isGroup(node)) return node.children.some(queryTouchesBody);
-  return isContentField((node as Rule).field);
+  return isContentField(node.field);
 }

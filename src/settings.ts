@@ -59,7 +59,9 @@ export class MassEditSettingTab extends PluginSettingTab {
       )
       .addText((t) =>
         t
-          .setPlaceholder(".obsidian/plugins/mass-editor/backups")
+          .setPlaceholder(
+            `${this.app.vault.configDir}/plugins/mass-editor/backups`
+          )
           .setValue(this.plugin.settings.backupFolder)
           .onChange(async (v) => {
             this.plugin.settings.backupFolder = v.trim();

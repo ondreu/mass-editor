@@ -110,7 +110,7 @@ export class QueryBuilder {
     }
     group.children.forEach((child: Node, i: number) => {
       if (isGroup(child)) this.renderGroup(body, child, group, i);
-      else this.renderRule(body, child as Rule, group, i);
+      else this.renderRule(body, child, group, i);
     });
   }
 

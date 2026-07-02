@@ -1,6 +1,5 @@
 import type { App, TFile } from "obsidian";
 import type { EditOp } from "./operations";
-import { OP_LABELS } from "./operations";
 import type { RegexScope } from "./applier";
 import { stripFrontmatter } from "../query/engine";
 

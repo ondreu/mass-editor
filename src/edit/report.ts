@@ -1,4 +1,5 @@
-import type { App, TFile } from "obsidian";
+import { TFile } from "obsidian";
+import type { App } from "obsidian";
 import type { BackupManager, RunRecord } from "../backup/backupManager";
 import type MassEditorPlugin from "../main";
 import { type EditOp, OP_LABELS } from "./operations";
@@ -89,8 +90,8 @@ export async function writeReport(
   }
   const path = folder ? `${folder}/run-${rec.runId}.md` : `run-${rec.runId}.md`;
   const existing = app.vault.getAbstractFileByPath(path);
-  if (existing && "stat" in existing) {
-    await app.vault.modify(existing as TFile, markdown);
+  if (existing instanceof TFile) {
+    await app.vault.modify(existing, markdown);
   } else {
     await app.vault.create(path, markdown);
   }

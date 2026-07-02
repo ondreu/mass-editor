@@ -35,9 +35,11 @@ export default class MassEditorPlugin extends Plugin {
     );
 
     this.addCommand({
-      id: "open-mass-editor",
+      id: "open",
       name: "Open",
-      callback: () => this.activateView(),
+      callback: () => {
+        void this.activateView();
+      },
     });
 
     this.addSettingTab(new MassEditSettingTab(this.app, this));
@@ -47,16 +49,16 @@ export default class MassEditorPlugin extends Plugin {
   async activateView(): Promise<void> {
     const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_MASS_EDIT);
     if (existing.length > 0) {
-      this.app.workspace.revealLeaf(existing[0]);
+      await this.app.workspace.revealLeaf(existing[0]);
       return;
     }
     const leaf = this.app.workspace.getLeaf("tab");
     await leaf.setViewState({ type: VIEW_TYPE_MASS_EDIT, active: true });
-    this.app.workspace.revealLeaf(leaf);
+    await this.app.workspace.revealLeaf(leaf);
   }
 
   async loadSettings(): Promise<void> {
-    const data = await this.loadData();
+    const data = ((await this.loadData()) ?? {}) as Partial<MassEditSettings>;
     this.settings = Object.assign({}, DEFAULT_SETTINGS, data);
     // history and presets must be arrays
     if (!Array.isArray(this.settings.history)) this.settings.history = [];

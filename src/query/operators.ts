@@ -202,7 +202,7 @@ function evalRuleInner(rule: Rule, ctx: EvalContext): Tri {
       const fm = ctx.frontmatter;
       const key = rule.key ?? "";
       const present = fm !== undefined && key !== "" && key in fm;
-      const fv = present ? (fm as Record<string, unknown>)[key] : undefined;
+      const fv = present ? fm[key] : undefined;
       switch (rule.op) {
         case "exists":
           return present;

@@ -1,4 +1,5 @@
-import type { App, DataAdapter, TFile } from "obsidian";
+import { TFile } from "obsidian";
+import type { App, DataAdapter } from "obsidian";
 import type { Query } from "../query/types";
 import type { EditOp } from "../edit/operations";
 
@@ -225,9 +226,9 @@ export class BackupManager {
 
     let after = "";
     const file = this.app.vault.getAbstractFileByPath(path);
-    if (file && "stat" in file) {
+    if (file instanceof TFile) {
       try {
-        after = await this.app.vault.read(file as TFile);
+        after = await this.app.vault.read(file);
       } catch {
         /* best-effort */
       }
@@ -243,9 +244,9 @@ export class BackupManager {
     for (const entry of manifest.files) {
       const file = this.app.vault.getAbstractFileByPath(entry.path);
       let drifted = false;
-      if (file && "stat" in file) {
+      if (file instanceof TFile) {
         try {
-          const current = await this.app.vault.read(file as TFile);
+          const current = await this.app.vault.read(file);
           drifted = hashString(current) !== entry.hashAfter;
         } catch {
           drifted = true;
@@ -289,14 +290,14 @@ export class BackupManager {
         const backup = await this.adapter.read(entry.backupPath);
         const file = this.app.vault.getAbstractFileByPath(entry.path);
 
-        if (file && "stat" in file) {
-          const current = await this.app.vault.read(file as TFile);
+        if (file instanceof TFile) {
+          const current = await this.app.vault.read(file);
           const drifted = hashString(current) !== entry.hashAfter;
           if (drifted && !overwriteDrifted) {
             result.skipped++;
             continue;
           }
-          await this.app.vault.modify(file as TFile, backup);
+          await this.app.vault.modify(file, backup);
         } else {
           // file is gone — recreate it at its original path
           await this.ensureVaultDir(entry.path);

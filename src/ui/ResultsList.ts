@@ -104,7 +104,11 @@ export class ResultsList {
       const name = row.createDiv({ cls: "me-result__name", text: file.basename });
       name.onclick = (e) => {
         e.stopPropagation();
-        this.app.workspace.openLinkText(file.path, file.path, e.ctrlKey || e.metaKey);
+        void this.app.workspace.openLinkText(
+          file.path,
+          file.path,
+          e.ctrlKey || e.metaKey
+        );
       };
       name.addEventListener("mouseover", (e) => {
         this.app.workspace.trigger("hover-link", {
@@ -136,7 +140,7 @@ export class ResultsList {
       open.setAttribute("aria-label", "Open in new tab");
       open.onclick = (e) => {
         e.stopPropagation();
-        this.app.workspace.openLinkText(file.path, file.path, true);
+        void this.app.workspace.openLinkText(file.path, file.path, true);
       };
 
       // Clicking elsewhere on the row toggles the checkbox.
