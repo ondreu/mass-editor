@@ -1,0 +1,28 @@
+{
+  "name": "mass-editor",
+  "version": "1.0.0",
+  "description": "Obsidian plugin for mass search and edit across the vault.",
+  "main": "main.js",
+  "type": "module",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+    "test": "node --test --import tsx test/*.test.ts"
+  },
+  "keywords": [
+    "obsidian",
+    "plugin",
+    "mass-edit",
+    "bulk-edit"
+  ],
+  "author": "ondreu",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "builtin-modules": "^3.3.0",
+    "esbuild": "^0.20.0",
+    "obsidian": "^1.4.11",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3"
+  }
+}
