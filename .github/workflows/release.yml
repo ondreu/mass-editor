@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - "*"
+  workflow_dispatch: {}
 
 permissions:
   contents: write
@@ -23,12 +24,26 @@ jobs:
           npm ci
           npm run build
 
+      - name: Determine version tag
+        id: v
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=$(node -p "require('./manifest.json').version")" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Create release with assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.ref_name }}
         run: |
+          TAG="${{ steps.v.outputs.tag }}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists — skipping."
+            exit 0
+          fi
           gh release create "$TAG" \
             main.js manifest.json styles.css versions.json \
+            --target "$GITHUB_SHA" \
             --title "$TAG" \
             --generate-notes
