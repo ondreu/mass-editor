@@ -1,4 +1,4 @@
-import { type App, Modal, Setting } from "obsidian";
+import { type App, Modal } from "obsidian";
 import type { ImpactSummary } from "../edit/summary";
 import type {
   BackupManager,
@@ -7,7 +7,7 @@ import type {
 } from "../backup/backupManager";
 import { noteCount } from "./dom";
 
-/** Potvrzovací dialog se souhrnem dopadu. */
+/** Confirmation dialog showing the impact summary. */
 export class ConfirmApplyModal extends Modal {
   constructor(
     app: App,
@@ -20,10 +20,9 @@ export class ConfirmApplyModal extends Modal {
   onOpen(): void {
     const { contentEl } = this;
     contentEl.addClass("me-modal");
-    contentEl.createEl("h3", { text: "Potvrdit hromadnou editaci" });
+    contentEl.createEl("h3", { text: "Apply changes" });
     contentEl.createEl("p", {
-      cls: "me-modal__lead",
-      text: `Dotčeno ${noteCount(this.summary.fileCount)}. Před zápisem se vytvoří záloha.`,
+      text: `${noteCount(this.summary.fileCount)} affected. A backup is created before writing.`,
     });
 
     const list = contentEl.createDiv({ cls: "me-summary" });
@@ -34,12 +33,12 @@ export class ConfirmApplyModal extends Modal {
       row.setText(line.text);
     });
 
-    const buttons = contentEl.createDiv({ cls: "me-modal__actions" });
-    const cancel = buttons.createEl("button", { text: "Zrušit" });
+    const buttons = contentEl.createDiv({ cls: "modal-button-container" });
+    const cancel = buttons.createEl("button", { text: "Cancel" });
     cancel.onclick = () => this.close();
     const apply = buttons.createEl("button", {
-      cls: "me-btn me-btn--primary",
-      text: "Aplikovat",
+      cls: "mod-cta",
+      text: "Apply",
     });
     apply.onclick = () => {
       this.close();
@@ -52,7 +51,7 @@ export class ConfirmApplyModal extends Modal {
   }
 }
 
-/** Historie běhů + undo. */
+/** Run history + undo. */
 export class HistoryModal extends Modal {
   constructor(
     app: App,
@@ -70,14 +69,11 @@ export class HistoryModal extends Modal {
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass("me-modal");
-    contentEl.createEl("h3", { text: "Historie běhů" });
+    contentEl.createEl("h3", { text: "History" });
 
     const runs = this.backup.getHistory();
     if (runs.length === 0) {
-      contentEl.createDiv({
-        cls: "me-empty",
-        text: "Zatím žádný běh editace.",
-      });
+      contentEl.createDiv({ cls: "me-empty", text: "No edit runs yet." });
       return;
     }
 
@@ -90,33 +86,30 @@ export class HistoryModal extends Modal {
     if (rec.undone) row.addClass("is-undone");
 
     const info = row.createDiv({ cls: "me-history__info" });
-    info.createDiv({
-      cls: "me-history__time",
-      text: new Date(rec.timestamp).toLocaleString(),
-    });
+    info.createDiv({ text: new Date(rec.timestamp).toLocaleString() });
     info.createDiv({
       cls: "me-history__meta",
-      text: `${noteCount(rec.fileCount)} • ${rec.opCount} operací${
-        rec.undone ? " • vráceno" : ""
+      text: `${noteCount(rec.fileCount)} · ${rec.opCount} operations${
+        rec.undone ? " · reverted" : ""
       }`,
     });
 
     const undo = row.createEl("button", {
-      cls: "me-btn me-btn--danger",
-      text: rec.undone ? "Vráceno" : "Vrátit zpět",
+      cls: "mod-warning",
+      text: rec.undone ? "Reverted" : "Undo",
     });
     undo.disabled = !!rec.undone;
     undo.onclick = async () => {
       const plan = await this.backup.planUndo(rec);
       if (!plan) {
-        row.createDiv({ cls: "me-op__err is-visible", text: "Záloha nenalezena." });
+        row.createDiv({ cls: "me-op__error", text: "Backup not found." });
         return;
       }
       const drifted = plan.entries.filter((e) => e.drifted).length;
       if (drifted > 0) {
-        new UndoDriftModal(this.app, plan, async (overwrite) => {
-          await this.doUndo(rec, overwrite);
-        }).open();
+        new UndoDriftModal(this.app, plan, (overwrite) =>
+          void this.doUndo(rec, overwrite)
+        ).open();
       } else {
         await this.doUndo(rec, false);
       }
@@ -126,20 +119,16 @@ export class HistoryModal extends Modal {
   private async doUndo(rec: RunRecord, overwrite: boolean): Promise<void> {
     const res = await this.backup.undoRun(rec, overwrite);
     this.onAfterUndo();
-    new ResultModal(
-      this.app,
-      "Undo dokončeno",
-      [
-        `Obnoveno: ${res.restored}`,
-        `Přeskočeno: ${res.skipped}`,
-        ...res.errors.map((e) => `Chyba: ${e}`),
-      ]
-    ).open();
+    new ResultModal(this.app, "Undo complete", [
+      `Restored: ${res.restored}`,
+      `Skipped: ${res.skipped}`,
+      ...res.errors.map((e) => `Error: ${e}`),
+    ]).open();
     this.render();
   }
 }
 
-/** Volba při driftu — přeskočit vs přepsat změněné soubory. */
+/** Drift choice — skip vs overwrite manually-changed files. */
 export class UndoDriftModal extends Modal {
   constructor(
     app: App,
@@ -152,11 +141,10 @@ export class UndoDriftModal extends Modal {
   onOpen(): void {
     const { contentEl } = this;
     contentEl.addClass("me-modal");
-    contentEl.createEl("h3", { text: "Některé soubory byly změněny" });
+    contentEl.createEl("h3", { text: "Some files have changed" });
     const drifted = this.plan.entries.filter((e) => e.drifted);
     contentEl.createEl("p", {
-      cls: "me-modal__lead",
-      text: `${drifted.length} souborů bylo od editace ručně změněno. Obnovení je přepíše.`,
+      text: `${drifted.length} file(s) were modified since the edit. Restoring overwrites them.`,
     });
 
     const list = contentEl.createDiv({ cls: "me-summary" });
@@ -164,20 +152,21 @@ export class UndoDriftModal extends Modal {
       list.createDiv({ cls: "me-summary__line is-warn", text: e.path });
     });
     if (drifted.length > 30) {
-      list.createDiv({ cls: "me-summary__line", text: `… a další (${drifted.length - 30})` });
+      list.createDiv({
+        cls: "me-summary__line",
+        text: `… and ${drifted.length - 30} more`,
+      });
     }
 
-    const actions = contentEl.createDiv({ cls: "me-modal__actions" });
-    const skip = actions.createEl("button", {
-      text: "Přeskočit změněné",
-    });
+    const actions = contentEl.createDiv({ cls: "modal-button-container" });
+    const skip = actions.createEl("button", { text: "Skip changed" });
     skip.onclick = () => {
       this.close();
       this.onChoose(false);
     };
     const overwrite = actions.createEl("button", {
-      cls: "me-btn me-btn--danger",
-      text: "Přepsat vše",
+      cls: "mod-warning",
+      text: "Overwrite all",
     });
     overwrite.onclick = () => {
       this.close();
@@ -190,7 +179,7 @@ export class UndoDriftModal extends Modal {
   }
 }
 
-/** Jednoduchý výsledkový dialog (report). */
+/** Simple result dialog (report). */
 export class ResultModal extends Modal {
   constructor(app: App, private title: string, private lines: string[]) {
     super(app);
@@ -203,13 +192,13 @@ export class ResultModal extends Modal {
     const list = contentEl.createDiv({ cls: "me-summary" });
     this.lines.forEach((l) =>
       list.createDiv({
-        cls: "me-summary__line" + (l.startsWith("Chyba") ? " is-warn" : ""),
+        cls: "me-summary__line" + (l.startsWith("Error") ? " is-warn" : ""),
         text: l,
       })
     );
-    new Setting(contentEl).addButton((b) =>
-      b.setButtonText("Zavřít").setCta().onClick(() => this.close())
-    );
+    const actions = contentEl.createDiv({ cls: "modal-button-container" });
+    const close = actions.createEl("button", { cls: "mod-cta", text: "Close" });
+    close.onclick = () => this.close();
   }
 
   onClose(): void {

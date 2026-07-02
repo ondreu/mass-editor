@@ -1,15 +1,15 @@
 import type { FieldType, Rule, Tri } from "./types";
 
-/** Kontext pro vyhodnocení jednoho pravidla nad jedním souborem. */
+/** Context for evaluating a single rule against a single file. */
 export interface EvalContext {
-  name: string; // basename bez přípony
+  name: string; // basename without extension
   path: string;
   ctime: number; // ms
   mtime: number; // ms
-  /** Sloučené tagy (frontmatter + inline) bez vedoucího '#'. */
+  /** Merged tags (frontmatter + inline) without the leading '#'. */
   tags: string[];
   frontmatter: Record<string, unknown> | undefined;
-  /** Tělo souboru (za frontmatterem). `null` = zatím nenačteno (fáze 1). */
+  /** File body (after the frontmatter). `null` = not read yet (phase 1). */
   body: string | null;
 }
 
@@ -29,51 +29,51 @@ export interface OperatorDef {
   input: ValueInput;
 }
 
-/** Operátory dostupné pro každé pole (pořadí = pořadí v UI). */
+/** Operators available per field (order = order in the UI). */
 export const OPERATORS: Record<FieldType, OperatorDef[]> = {
   tag: [
-    { op: "has", label: "má", input: "text" },
-    { op: "hasNot", label: "nemá", input: "text" },
-    { op: "matchesGlob", label: "odpovídá glob", input: "glob" },
+    { op: "has", label: "has", input: "text" },
+    { op: "hasNot", label: "has not", input: "text" },
+    { op: "matchesGlob", label: "matches glob", input: "glob" },
   ],
   frontmatter: [
-    { op: "exists", label: "existuje", input: "none" },
-    { op: "notExists", label: "neexistuje", input: "none" },
-    { op: "equals", label: "= rovná se", input: "text" },
-    { op: "contains", label: "obsahuje", input: "text" },
-    { op: "regex", label: "regex", input: "text" },
-    { op: "gt", label: "> větší", input: "text" },
-    { op: "lt", label: "< menší", input: "text" },
-    { op: "gte", label: "≥ větší/rovno", input: "text" },
-    { op: "lte", label: "≤ menší/rovno", input: "text" },
-    { op: "isEmpty", label: "je prázdné", input: "none" },
+    { op: "exists", label: "exists", input: "none" },
+    { op: "notExists", label: "does not exist", input: "none" },
+    { op: "equals", label: "equals", input: "text" },
+    { op: "contains", label: "contains", input: "text" },
+    { op: "regex", label: "matches regex", input: "text" },
+    { op: "gt", label: "greater than", input: "text" },
+    { op: "lt", label: "less than", input: "text" },
+    { op: "gte", label: "greater or equal", input: "text" },
+    { op: "lte", label: "less or equal", input: "text" },
+    { op: "isEmpty", label: "is empty", input: "none" },
   ],
   body: [
-    { op: "contains", label: "obsahuje", input: "text" },
-    { op: "regex", label: "regex", input: "text" },
+    { op: "contains", label: "contains", input: "text" },
+    { op: "regex", label: "matches regex", input: "text" },
   ],
   name: [
-    { op: "contains", label: "obsahuje", input: "text" },
-    { op: "equals", label: "rovná se", input: "text" },
-    { op: "regex", label: "regex", input: "text" },
+    { op: "contains", label: "contains", input: "text" },
+    { op: "equals", label: "equals", input: "text" },
+    { op: "regex", label: "matches regex", input: "text" },
   ],
   path: [
-    { op: "contains", label: "obsahuje", input: "text" },
-    { op: "regex", label: "regex", input: "text" },
+    { op: "contains", label: "contains", input: "text" },
+    { op: "regex", label: "matches regex", input: "text" },
   ],
   location: [
-    { op: "inFolder", label: "ve složce", input: "folder" },
-    { op: "notInFolder", label: "mimo složku", input: "folder" },
+    { op: "inFolder", label: "in folder", input: "folder" },
+    { op: "notInFolder", label: "not in folder", input: "folder" },
   ],
   created: [
-    { op: "before", label: "před", input: "date" },
-    { op: "after", label: "po", input: "date" },
-    { op: "between", label: "mezi", input: "daterange" },
+    { op: "before", label: "before", input: "date" },
+    { op: "after", label: "after", input: "date" },
+    { op: "between", label: "between", input: "daterange" },
   ],
   modified: [
-    { op: "before", label: "před", input: "date" },
-    { op: "after", label: "po", input: "date" },
-    { op: "between", label: "mezi", input: "daterange" },
+    { op: "before", label: "before", input: "date" },
+    { op: "after", label: "after", input: "date" },
+    { op: "between", label: "between", input: "daterange" },
   ],
 };
 
@@ -86,9 +86,9 @@ export function inputTypeFor(field: FieldType, op: string): ValueInput {
   return def ? def.input : "text";
 }
 
-// ---------- pomocné funkce ----------
+// ---------- helpers ----------
 
-/** Převede glob (`project/*`, `a/**`) na RegExp. */
+/** Converts a glob (`project/*`, `a/**`) to a RegExp. */
 export function globToRegExp(glob: string): RegExp {
   let re = "";
   for (let i = 0; i < glob.length; i++) {
@@ -133,7 +133,7 @@ function toTime(v: unknown): number | null {
   return null;
 }
 
-/** Porovná dvě hodnoty jako číslo, případně jako datum. `null` = neporovnatelné. */
+/** Compares two values as numbers, falling back to dates. `null` = incomparable. */
 function compare(a: unknown, b: unknown): number | null {
   const an = toNumber(a);
   const bn = toNumber(b);
@@ -169,11 +169,11 @@ function isEmptyValue(v: unknown): boolean {
   return false;
 }
 
-// ---------- vyhodnocení jednoho pravidla ----------
+// ---------- single-rule evaluation ----------
 
 /**
- * Vyhodnotí pravidlo nad kontextem. Vrací tři-hodnotu.
- * Obsahová pravidla (`body`) vrací `unknown`, pokud tělo ještě nebylo načteno.
+ * Evaluates a rule against the context, returning a three-valued result.
+ * Content rules (`body`) return `unknown` when the body hasn't been read yet.
  */
 export function evalRule(rule: Rule, ctx: EvalContext): Tri {
   const raw = evalRuleInner(rule, ctx);
@@ -267,7 +267,7 @@ function evalRuleInner(rule: Rule, ctx: EvalContext): Tri {
 
     case "location": {
       const folder = stringOf(val).replace(/^\/+|\/+$/g, "");
-      const includeSub = rule.flag !== false; // default: včetně podsložek
+      const includeSub = rule.flag !== false; // default: include subfolders
       const inFolder = matchFolder(ctx.path, folder, includeSub);
       if (rule.op === "inFolder") return inFolder;
       if (rule.op === "notInFolder") return !inFolder;
@@ -307,7 +307,7 @@ function evalRuleInner(rule: Rule, ctx: EvalContext): Tri {
   }
 }
 
-/** Rozhodne, zda `path` spadá do složky `folder`. */
+/** Decides whether `path` lives inside `folder`. */
 export function matchFolder(
   path: string,
   folder: string,
@@ -315,7 +315,7 @@ export function matchFolder(
 ): boolean {
   const dir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
   if (folder === "" || folder === "/") {
-    // kořen vaultu
+    // vault root
     return includeSub ? true : dir === "";
   }
   if (includeSub) {

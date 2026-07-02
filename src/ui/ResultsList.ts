@@ -1,10 +1,10 @@
 import type { TFile } from "obsidian";
 import { noteCount } from "./dom";
 
-const ROW_HEIGHT = 40; // px, musí odpovídat .me-result v CSS
+const ROW_HEIGHT = 30; // px, must match .me-result in styles.css
 const BUFFER = 6;
 
-/** Virtualizovaný seznam výsledků s checkboxy. */
+/** Virtualized results list with checkboxes. */
 export class ResultsList {
   private files: TFile[] = [];
   private selected: Set<string>;
@@ -20,28 +20,27 @@ export class ResultsList {
 
   mount(container: HTMLElement): void {
     container.empty();
-    const toolbar = container.createDiv({ cls: "me-results__toolbar" });
+    const bar = container.createDiv({ cls: "me-results__bar" });
 
-    const left = toolbar.createDiv({ cls: "me-results__selall" });
-    this.headerCheck = left.createEl("input", { attr: { type: "checkbox" } });
+    const label = bar.createEl("label");
+    this.headerCheck = label.createEl("input", { attr: { type: "checkbox" } });
+    label.createSpan({ text: "Select all" });
     this.headerCheck.onchange = () => {
-      if (this.headerCheck.checked) {
+      if (this.headerCheck.checked)
         this.files.forEach((f) => this.selected.add(f.path));
-      } else {
-        this.selected.clear();
-      }
+      else this.selected.clear();
       this.renderWindow();
       this.updateCount();
       this.onChange();
     };
-    left.createEl("label", { text: "Vybrat vše" });
 
-    this.countEl = toolbar.createDiv({ cls: "me-results__count" });
+    this.countEl = bar.createDiv({ cls: "me-results__count" });
 
     this.viewport = container.createDiv({ cls: "me-results__viewport" });
     this.spacer = this.viewport.createDiv({ cls: "me-results__spacer" });
     this.rows = this.spacer.createDiv({ cls: "me-results__rows" });
     this.viewport.addEventListener("scroll", () => this.renderWindow());
+    this.updateCount();
   }
 
   setFiles(files: TFile[]): void {
@@ -56,8 +55,8 @@ export class ResultsList {
     const sel = this.selectedCount();
     this.countEl.setText(
       this.files.length === 0
-        ? "Žádné výsledky"
-        : `${noteCount(this.files.length)} • vybráno ${sel}`
+        ? "No results"
+        : `${noteCount(this.files.length)} · ${sel} selected`
     );
     this.headerCheck.checked =
       this.files.length > 0 && sel === this.files.length;
@@ -72,7 +71,7 @@ export class ResultsList {
 
   private renderWindow(): void {
     const scrollTop = this.viewport.scrollTop;
-    const height = this.viewport.clientHeight || 400;
+    const height = this.viewport.clientHeight || 260;
     const first = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - BUFFER);
     const visible = Math.ceil(height / ROW_HEIGHT) + BUFFER * 2;
     const last = Math.min(this.files.length, first + visible);
@@ -86,22 +85,23 @@ export class ResultsList {
 
       const cb = row.createEl("input", { attr: { type: "checkbox" } });
       cb.checked = this.selected.has(file.path);
-      cb.onchange = () => {
+      const toggle = () => {
         if (cb.checked) this.selected.add(file.path);
         else this.selected.delete(file.path);
         this.updateCount();
         this.onChange();
       };
+      cb.onchange = toggle;
 
-      const info = row.createDiv({ cls: "me-result__info" });
-      info.createDiv({ cls: "me-result__name", text: file.basename });
-      const dir = file.parent && file.parent.path !== "/" ? file.parent.path : "";
-      if (dir) info.createDiv({ cls: "me-result__path", text: dir });
+      row.createDiv({ cls: "me-result__name", text: file.basename });
+      const dir =
+        file.parent && file.parent.path !== "/" ? file.parent.path : "";
+      if (dir) row.createDiv({ cls: "me-result__path", text: dir });
 
       row.onclick = (e) => {
         if (e.target === cb) return;
         cb.checked = !cb.checked;
-        cb.onchange?.(new Event("change"));
+        toggle();
       };
     }
   }

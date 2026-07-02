@@ -2,7 +2,7 @@ export type FmValueType = "string" | "number" | "boolean" | "list";
 
 export type EditOp =
   | { kind: "fm-set"; key: string; value: string; valueType: FmValueType }
-  | { kind: "fm-add"; key: string; value: string; valueType: FmValueType } // jen když klíč chybí
+  | { kind: "fm-add"; key: string; value: string; valueType: FmValueType } // only if the key is missing
   | { kind: "fm-delete"; key: string }
   | { kind: "fm-list-append"; key: string; value: string } // do YAML listu, bez duplicit
   | { kind: "tag-add"; tag: string } // frontmatter tags[]
@@ -12,20 +12,20 @@ export type EditOp =
   | { kind: "body-prepend"; text: string };
 
 export const OP_LABELS: Record<EditOp["kind"], string> = {
-  "fm-set": "Nastavit frontmatter klíč",
-  "fm-add": "Přidat frontmatter klíč (jen když chybí)",
-  "fm-delete": "Smazat frontmatter klíč",
-  "fm-list-append": "Přidat do frontmatter listu",
-  "tag-add": "Přidat tag",
-  "tag-remove": "Odebrat tag",
-  "body-regex": "Regex najít & nahradit (tělo)",
-  "body-append": "Připojit na konec těla",
-  "body-prepend": "Vložit na začátek těla",
+  "fm-set": "Set frontmatter key",
+  "fm-add": "Add frontmatter key (only if missing)",
+  "fm-delete": "Delete frontmatter key",
+  "fm-list-append": "Append to frontmatter list",
+  "tag-add": "Add tag",
+  "tag-remove": "Remove tag",
+  "body-regex": "Regex find & replace (body)",
+  "body-append": "Append to body",
+  "body-prepend": "Prepend to body",
 };
 
 /**
- * Pevné pořadí aplikace per soubor. Nižší číslo = dříve.
- * 1) frontmatter, 2) tagy, 3) regex, 4) append/prepend.
+ * Fixed per-file application order. Lower number = earlier.
+ * 1) frontmatter, 2) tags, 3) regex, 4) append/prepend.
  */
 export function opOrder(kind: EditOp["kind"]): number {
   switch (kind) {
@@ -45,7 +45,7 @@ export function opOrder(kind: EditOp["kind"]): number {
   }
 }
 
-/** Seřadí operace do deterministického pořadí (stabilně). */
+/** Sorts operations into deterministic order (stable). */
 export function orderOps(ops: EditOp[]): EditOp[] {
   return ops
     .map((op, i) => ({ op, i }))
@@ -53,7 +53,7 @@ export function orderOps(ops: EditOp[]): EditOp[] {
     .map((x) => x.op);
 }
 
-/** Převod textové hodnoty na typovanou frontmatter hodnotu. */
+/** Converts a text value into a typed frontmatter value. */
 export function coerceValue(value: string, type: FmValueType): unknown {
   switch (type) {
     case "number": {
@@ -73,7 +73,7 @@ export function coerceValue(value: string, type: FmValueType): unknown {
   }
 }
 
-/** Zkontroluje, zda je operace kompletně vyplněná (pro validaci UI). */
+/** Checks whether an operation is fully filled in (for UI validation). */
 export function isOpValid(op: EditOp): boolean {
   switch (op.kind) {
     case "fm-set":

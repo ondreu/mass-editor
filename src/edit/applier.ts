@@ -15,7 +15,7 @@ function normTag(t: string): string {
   return t.replace(/^#+/, "").trim();
 }
 
-/** Zajistí, že hodnota je pole stringů (tags může být string / list / chybět). */
+/** Ensures the value is a string array (tags may be a string / list / missing). */
 function toStringArray(v: unknown): string[] {
   if (v === undefined || v === null) return [];
   if (Array.isArray(v)) return v.map((x) => String(x)).filter((s) => s !== "");
@@ -31,12 +31,12 @@ function ensureGlobal(flags: string): string {
   return flags.includes("g") ? flags : flags + "g";
 }
 
-/** Konec frontmatter bloku (offset v obsahu), nebo 0 když žádný. */
+/** End of the frontmatter block (offset in content), or 0 if none. */
 function frontmatterEnd(app: App, file: TFile, content: string): number {
   const cache = app.metadataCache.getFileCache(file);
   const end = cache?.frontmatterPosition?.end.offset;
   if (typeof end === "number" && end > 0 && end <= content.length) {
-    // frontmatterPosition end je na `---`; přeskoč případný následující newline
+    // frontmatterPosition end is at `---`; skip a following newline if present
     let e = end;
     if (content[e] === "\n") e++;
     return e;
@@ -44,7 +44,7 @@ function frontmatterEnd(app: App, file: TFile, content: string): number {
   return 0;
 }
 
-/** Aplikuje frontmatter + tag operace v jednom atomickém průchodu. */
+/** Applies frontmatter + tag operations in a single atomic pass. */
 async function applyFrontmatterOps(
   app: App,
   file: TFile,
@@ -89,7 +89,7 @@ async function applyFrontmatterOps(
   });
 }
 
-/** Aplikuje tělové operace (regex/append/prepend) přes atomické API. */
+/** Applies body operations (regex/append/prepend) via the atomic API. */
 async function applyBodyOps(
   app: App,
   file: TFile,
@@ -103,7 +103,7 @@ async function applyBodyOps(
     for (const op of ops) {
       if (op.kind === "body-regex") {
         const re = safeRegex(op.pattern, op.flags);
-        if (!re) throw new Error(`Neplatný regex: /${op.pattern}/${op.flags}`);
+        if (!re) throw new Error(`Invalid regex: /${op.pattern}/${op.flags}`);
         const fmEnd = scope === "body" ? frontmatterEnd(app, file, out) : 0;
         const head = out.slice(0, fmEnd);
         const target = out.slice(fmEnd);
@@ -154,7 +154,7 @@ const FM_KINDS = new Set<EditOp["kind"]>([
   "tag-remove",
 ]);
 
-/** Aplikuje všechny operace na jeden soubor v pevném pořadí, izoluje chyby. */
+/** Applies all operations to one file in fixed order, isolating errors. */
 export async function applyToFile(
   app: App,
   file: TFile,

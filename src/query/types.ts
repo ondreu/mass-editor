@@ -1,4 +1,4 @@
-// Datový model pro query builder. Kořen dotazu je vždy Group.
+// Data model for the query builder. The query root is always a Group.
 
 export type LogicOp = "AND" | "OR";
 
@@ -12,21 +12,21 @@ export type FieldType =
   | "created"
   | "modified";
 
-/** Tři-hodnotová (Kleene) logika. `unknown` = zatím nerozhodnuto (tělo nečteno). */
+/** Three-valued (Kleene) logic. `unknown` = undecided so far (body not read). */
 export type Tri = true | false | "unknown";
 
 export interface Rule {
   id: string;
   field: FieldType;
-  /** Povinné pro `frontmatter` — název klíče. */
+  /** Required for `frontmatter` — the key name. */
   key?: string;
-  /** Operátor, viz operators.ts. */
+  /** Operator, see operators.ts. */
   op: string;
-  /** Hodnota — typ dle operátoru. */
+  /** Value — type depends on the operator. */
   value?: unknown;
-  /** Druhá hodnota (např. `between`). */
+  /** Second value (e.g. `between`). */
   value2?: unknown;
-  /** Doplňkový přepínač (např. location: včetně podsložek). */
+  /** Extra toggle (e.g. location: include subfolders). */
   flag?: boolean;
   negate?: boolean;
 }
@@ -46,7 +46,7 @@ export function isGroup(node: Node): node is Group {
   return (node as Group).children !== undefined;
 }
 
-/** Pole, která lze vyhodnotit čistě z metadat (fáze 1). */
+/** Fields evaluable purely from metadata (phase 1). */
 export const METADATA_FIELDS: FieldType[] = [
   "tag",
   "frontmatter",
@@ -57,7 +57,7 @@ export const METADATA_FIELDS: FieldType[] = [
   "modified",
 ];
 
-/** Pole vyžadující čtení těla souboru (fáze 2). */
+/** Fields that require reading the file body (phase 2). */
 export const CONTENT_FIELDS: FieldType[] = ["body"];
 
 export function isContentField(field: FieldType): boolean {

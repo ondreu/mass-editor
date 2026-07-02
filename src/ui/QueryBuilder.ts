@@ -17,12 +17,12 @@ import { uid } from "./dom";
 const FIELD_LABELS: Record<FieldType, string> = {
   tag: "Tag",
   frontmatter: "Frontmatter",
-  body: "Tělo",
-  name: "Název",
-  path: "Cesta",
-  location: "Umístění",
-  created: "Vytvořeno",
-  modified: "Upraveno",
+  body: "Body",
+  name: "Name",
+  path: "Path",
+  location: "Location",
+  created: "Created",
+  modified: "Modified",
 };
 
 const FIELD_ORDER: FieldType[] = [
@@ -45,9 +45,9 @@ export function newGroup(logic: "AND" | "OR" = "AND"): Group {
 }
 
 /**
- * Rekurzivní query builder v čistém DOM.
- * `onStructure` = přidání/odebrání uzlu (překreslí strom).
- * `onValue` = změna hodnoty (jen přepočet počítadla).
+ * Recursive query builder in plain DOM.
+ * `onStructure` = a node was added/removed (re-renders the tree).
+ * `onValue` = a value changed (only refreshes the live count).
  */
 export class QueryBuilder {
   private container!: HTMLElement;
@@ -70,84 +70,52 @@ export class QueryBuilder {
 
   private render(): void {
     this.container.empty();
-    this.renderGroup(this.container, this.root, null, -1, 0);
+    this.renderGroup(this.container, this.root, null, -1);
   }
 
   private renderGroup(
     parent: HTMLElement,
     group: Group,
     parentGroup: Group | null,
-    index: number,
-    depth: number
+    index: number
   ): void {
     const box = parent.createDiv({ cls: "me-group" });
-    if (group.negate) box.addClass("me-group--negated");
-    box.style.setProperty("--me-depth", String(depth));
 
-    // hlavička skupiny
     const header = box.createDiv({ cls: "me-group__header" });
+    this.renderLogic(header, group);
+    this.renderNot(header, () => group.negate, (v) => (group.negate = v));
 
-    const logicWrap = header.createDiv({ cls: "me-logic" });
-    this.makeLogicToggle(logicWrap, group);
-
-    const notBtn = header.createEl("button", {
-      cls: "me-badge me-badge--not" + (group.negate ? " is-active" : ""),
-      text: "NOT",
-    });
-    notBtn.setAttribute("aria-label", "Negovat skupinu");
-    notBtn.onclick = () => {
-      group.negate = !group.negate;
-      this.rerender();
-    };
-
-    const spacer = header.createDiv({ cls: "me-spacer" });
-    void spacer;
-
-    this.iconButton(header, "plus", "+ Pravidlo", () => {
+    const adders = header.createDiv({ cls: "me-group__adders" });
+    this.addButton(adders, "plus", "Rule", () => {
       group.children.push(newRule());
       this.rerender();
     });
-    this.iconButton(header, "folder-plus", "+ Skupina", () => {
+    this.addButton(adders, "folder-plus", "Group", () => {
       group.children.push(newGroup(group.logic === "AND" ? "OR" : "AND"));
       this.rerender();
     });
-
     if (parentGroup) {
-      const del = header.createEl("button", {
-        cls: "me-icon-btn me-icon-btn--danger",
-      });
-      setIcon(del, "trash-2");
-      del.setAttribute("aria-label", "Smazat skupinu");
-      del.onclick = () => {
+      this.iconButton(adders, "trash-2", "Remove group", () => {
         parentGroup.children.splice(index, 1);
         this.rerender();
-      };
-    }
-
-    // děti
-    const body = box.createDiv({ cls: "me-group__body" });
-    if (group.children.length === 0) {
-      body.createDiv({
-        cls: "me-empty",
-        text: "Prázdná skupina — přidejte pravidlo nebo skupinu.",
       });
     }
+
+    const body = box.createDiv({ cls: "me-group__body" });
+    if (group.children.length === 0) {
+      body.createDiv({ cls: "me-empty", text: "No rules yet." });
+    }
     group.children.forEach((child: Node, i: number) => {
-      if (isGroup(child)) {
-        this.renderGroup(body, child, group, i, depth + 1);
-      } else {
-        this.renderRule(body, child as Rule, group, i);
-      }
+      if (isGroup(child)) this.renderGroup(body, child, group, i);
+      else this.renderRule(body, child as Rule, group, i);
     });
   }
 
-  private makeLogicToggle(wrap: HTMLElement, group: Group): void {
+  private renderLogic(parent: HTMLElement, group: Group): void {
+    const wrap = parent.createDiv({ cls: "me-logic" });
     (["AND", "OR"] as const).forEach((logic) => {
-      const btn = wrap.createEl("button", {
-        cls:
-          "me-logic__btn" + (group.logic === logic ? " is-active" : ""),
-        text: logic,
-      });
+      const btn = wrap.createEl("button", { text: logic });
+      btn.toggleClass("is-active", group.logic === logic);
       btn.onclick = () => {
         if (group.logic !== logic) {
           group.logic = logic;
@@ -155,6 +123,21 @@ export class QueryBuilder {
         }
       };
     });
+  }
+
+  private renderNot(
+    parent: HTMLElement,
+    get: () => boolean | undefined,
+    set: (v: boolean) => void
+  ): void {
+    const btn = parent.createEl("button", { cls: "me-not", text: "NOT" });
+    btn.toggleClass("is-active", !!get());
+    btn.setAttribute("aria-label", "Negate");
+    btn.onclick = () => {
+      set(!get());
+      btn.toggleClass("is-active", !!get());
+      this.onValue();
+    };
   }
 
   private renderRule(
@@ -165,19 +148,13 @@ export class QueryBuilder {
   ): void {
     const row = parent.createDiv({ cls: "me-rule" });
 
-    const notBtn = row.createEl("button", {
-      cls: "me-badge me-badge--not" + (rule.negate ? " is-active" : ""),
-      text: "NOT",
-    });
-    notBtn.setAttribute("aria-label", "Negovat pravidlo");
-    notBtn.onclick = () => {
-      rule.negate = !rule.negate;
-      notBtn.toggleClass("is-active", !!rule.negate);
-      this.onValue();
-    };
+    this.renderNot(
+      row,
+      () => rule.negate,
+      (v) => (rule.negate = v)
+    );
 
-    // pole
-    const fieldSel = row.createEl("select", { cls: "me-select" });
+    const fieldSel = row.createEl("select", { cls: "dropdown me-field" });
     FIELD_ORDER.forEach((f) => {
       const opt = fieldSel.createEl("option", { text: FIELD_LABELS[f] });
       opt.value = f;
@@ -192,11 +169,10 @@ export class QueryBuilder {
       this.rerender();
     };
 
-    // klíč (jen frontmatter)
     if (rule.field === "frontmatter") {
       const keyInput = row.createEl("input", {
-        cls: "me-input me-input--key",
-        attr: { type: "text", placeholder: "klíč" },
+        cls: "me-key",
+        attr: { type: "text", placeholder: "key" },
       });
       keyInput.value = rule.key ?? "";
       keyInput.oninput = () => {
@@ -205,8 +181,7 @@ export class QueryBuilder {
       };
     }
 
-    // operátor
-    const opSel = row.createEl("select", { cls: "me-select" });
+    const opSel = row.createEl("select", { cls: "dropdown" });
     OPERATORS[rule.field].forEach((o) => {
       const opt = opSel.createEl("option", { text: o.label });
       opt.value = o.op;
@@ -219,20 +194,12 @@ export class QueryBuilder {
       this.rerender();
     };
 
-    // hodnota
-    const input = inputTypeFor(rule.field, rule.op);
-    this.renderValueInput(row, rule, input);
+    this.renderValueInput(row, rule, inputTypeFor(rule.field, rule.op));
 
-    // smazat
-    const del = row.createEl("button", {
-      cls: "me-icon-btn me-icon-btn--danger",
-    });
-    setIcon(del, "x");
-    del.setAttribute("aria-label", "Smazat pravidlo");
-    del.onclick = () => {
+    this.iconButton(row, "x", "Remove rule", () => {
       group.children.splice(index, 1);
       this.rerender();
-    };
+    });
   }
 
   private renderValueInput(
@@ -248,7 +215,7 @@ export class QueryBuilder {
       case "glob":
       case "folder": {
         const el = row.createEl("input", {
-          cls: "me-input",
+          cls: "me-value",
           attr: {
             type: input === "number" ? "number" : "text",
             placeholder: placeholderFor(input),
@@ -260,20 +227,20 @@ export class QueryBuilder {
           this.onValue();
         };
         if (input === "folder") {
-          const sub = row.createDiv({ cls: "me-check" });
+          const sub = row.createEl("label", { cls: "me-subfolders" });
           const cb = sub.createEl("input", { attr: { type: "checkbox" } });
           cb.checked = rule.flag !== false;
           cb.onchange = () => {
             rule.flag = cb.checked;
             this.onValue();
           };
-          sub.createEl("label", { text: "vč. podsložek" });
+          sub.createSpan({ text: "subfolders" });
         }
         return;
       }
       case "date": {
         const el = row.createEl("input", {
-          cls: "me-input",
+          cls: "me-value",
           attr: { type: "date" },
         });
         el.value = rule.value != null ? String(rule.value) : "";
@@ -285,7 +252,7 @@ export class QueryBuilder {
       }
       case "daterange": {
         const a = row.createEl("input", {
-          cls: "me-input",
+          cls: "me-value",
           attr: { type: "date" },
         });
         a.value = rule.value != null ? String(rule.value) : "";
@@ -295,7 +262,7 @@ export class QueryBuilder {
         };
         row.createSpan({ cls: "me-range-sep", text: "–" });
         const b = row.createEl("input", {
-          cls: "me-input",
+          cls: "me-value",
           attr: { type: "date" },
         });
         b.value = rule.value2 != null ? String(rule.value2) : "";
@@ -308,16 +275,28 @@ export class QueryBuilder {
     }
   }
 
+  private addButton(
+    parent: HTMLElement,
+    icon: string,
+    label: string,
+    onClick: () => void
+  ): void {
+    const btn = parent.createEl("button", { cls: "me-add" });
+    const ic = btn.createSpan();
+    setIcon(ic, icon);
+    btn.createSpan({ text: label });
+    btn.onclick = onClick;
+  }
+
   private iconButton(
     parent: HTMLElement,
     icon: string,
     label: string,
     onClick: () => void
   ): void {
-    const btn = parent.createEl("button", { cls: "me-text-btn", text: label });
-    const ic = btn.createSpan({ cls: "me-text-btn__icon" });
-    setIcon(ic, icon);
-    ic.parentElement?.prepend(ic);
+    const btn = parent.createEl("div", { cls: "clickable-icon" });
+    setIcon(btn, icon);
+    btn.setAttribute("aria-label", label);
     btn.onclick = onClick;
   }
 }
@@ -327,10 +306,10 @@ function placeholderFor(input: ValueInput): string {
     case "glob":
       return "project/*";
     case "folder":
-      return "Složka/Podsložka";
+      return "Folder/Subfolder";
     case "number":
-      return "číslo";
+      return "number";
     default:
-      return "hodnota";
+      return "value";
   }
 }

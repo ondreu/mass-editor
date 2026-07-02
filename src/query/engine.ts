@@ -6,7 +6,7 @@ import { evalGroup } from "./evaluate";
 
 export { andTri, orTri, notTri, evalGroup, queryTouchesBody } from "./evaluate";
 
-// ---------- sestavení kontextu z metadat (fáze 1) ----------
+// ---------- building the metadata context (phase 1) ----------
 
 function buildMetaContext(app: App, file: TFile): EvalContext {
   const cache = app.metadataCache.getFileCache(file);
@@ -19,21 +19,21 @@ function buildMetaContext(app: App, file: TFile): EvalContext {
     mtime: file.stat.mtime,
     tags,
     frontmatter: cache?.frontmatter,
-    body: null, // fáze 1: tělo nenačteno
+    body: null, // phase 1: body not read yet
   };
 }
 
 export interface SearchResult {
-  /** Finální množina souborů, které dotazu vyhovují. */
+  /** Final set of files matching the query. */
   files: TFile[];
-  /** Kolik souborů si vyžádalo čtení těla (fáze 2). */
+  /** How many files required reading the body (phase 2). */
   bodyReads: number;
 }
 
 /**
- * Dvoufázové vyhledávání.
- * Fáze 1: vyhodnoť strom nad metadaty. false → zahoď, true/unknown → kandidát.
- * Fáze 2: pro `unknown` kandidáty načti tělo a přehodnoť.
+ * Two-phase search.
+ * Phase 1: evaluate the tree over metadata. false → drop, true/unknown → candidate.
+ * Phase 2: for `unknown` candidates, read the body and re-evaluate.
  */
 export async function search(
   app: App,
@@ -60,14 +60,14 @@ export async function search(
     if (evalGroup(query, ctx) === true) matched.push(file);
   }
 
-  // stabilní řazení dle cesty
+  // stable sort by path
   matched.sort((a, b) => a.path.localeCompare(b.path));
   return { files: matched, bodyReads };
 }
 
 /**
- * Rychlý odhad pro živé počítadlo — jen fáze 1.
- * Vrací počet jistých shod a počet kandidátů závislých na těle.
+ * Fast estimate for the live count — phase 1 only.
+ * Returns the number of certain matches and body-dependent candidates.
  */
 export function estimatePhase1(
   app: App,
@@ -85,7 +85,7 @@ export function estimatePhase1(
   return { certain, maybe };
 }
 
-/** Vrátí tělo bez frontmatter bloku (pro obsahová pravidla). */
+/** Returns the body without the frontmatter block (for content rules). */
 export function stripFrontmatter(app: App, file: TFile, content: string): string {
   const cache = app.metadataCache.getFileCache(file);
   const end = cache?.frontmatterPosition?.end.offset;

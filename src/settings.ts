@@ -10,7 +10,7 @@ export interface MassEditSettings {
   defaultSelectAll: boolean;
   regexScope: RegexScope;
   liveCountDebounceMs: number;
-  /** Historie běhů pro undo. */
+  /** Run history for undo. */
   history: RunRecord[];
 }
 
@@ -34,9 +34,9 @@ export class MassEditSettingTab extends PluginSettingTab {
     containerEl.empty();
 
     new Setting(containerEl)
-      .setName("Složka záloh")
+      .setName("Backup folder")
       .setDesc(
-        "Kam ukládat zálohy. Prázdné = složka pluginu (nemusí se synchronizovat a reinstalace ji smaže). Pro trvalé zálohy zvolte cestu ve vaultu."
+        "Where to store backups. Empty = the plugin folder (may not sync, and reinstalling the plugin can delete it). For durable backups, choose a path inside your vault."
       )
       .addText((t) =>
         t
@@ -49,8 +49,8 @@ export class MassEditSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Retence záloh")
-      .setDesc("Počet uchovaných běhů; starší se automaticky mažou.")
+      .setName("Backup retention")
+      .setDesc("Number of runs to keep; older runs are pruned automatically.")
       .addText((t) =>
         t
           .setValue(String(this.plugin.settings.backupRetention))
@@ -62,8 +62,8 @@ export class MassEditSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Potvrdit před aplikací")
-      .setDesc("Zobrazit potvrzovací dialog před hromadnou editací.")
+      .setName("Confirm before apply")
+      .setDesc("Show a confirmation dialog before bulk editing.")
       .addToggle((t) =>
         t
           .setValue(this.plugin.settings.confirmBeforeApply)
@@ -74,8 +74,8 @@ export class MassEditSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Výchozí výběr všech výsledků")
-      .setDesc("Nové výsledky vyhledávání jsou defaultně zaškrtnuté.")
+      .setName("Select all results by default")
+      .setDesc("New search results start fully selected.")
       .addToggle((t) =>
         t.setValue(this.plugin.settings.defaultSelectAll).onChange(async (v) => {
           this.plugin.settings.defaultSelectAll = v;
@@ -84,14 +84,14 @@ export class MassEditSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Rozsah regexu")
+      .setName("Regex scope")
       .setDesc(
-        "Tělo = jen obsah za frontmatterem (bezpečné). Celý soubor může poškodit YAML."
+        "Body = only content after the frontmatter (safe). Whole file may corrupt YAML."
       )
       .addDropdown((d) =>
         d
-          .addOption("body", "Jen tělo")
-          .addOption("whole", "Celý soubor (riziko)")
+          .addOption("body", "Body only")
+          .addOption("whole", "Whole file (risky)")
           .setValue(this.plugin.settings.regexScope)
           .onChange(async (v) => {
             this.plugin.settings.regexScope = v as RegexScope;
@@ -100,8 +100,8 @@ export class MassEditSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Debounce živého počítadla (ms)")
-      .setDesc("Prodleva přepočtu počtu poznámek po změně dotazu.")
+      .setName("Live count debounce (ms)")
+      .setDesc("Delay before recomputing the note count after a query change.")
       .addText((t) =>
         t
           .setValue(String(this.plugin.settings.liveCountDebounceMs))

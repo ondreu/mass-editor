@@ -5,7 +5,6 @@ import {
   OP_LABELS,
   isOpValid,
 } from "../edit/operations";
-import { uid } from "./dom";
 
 type OpKind = EditOp["kind"];
 
@@ -33,7 +32,7 @@ function newOp(kind: OpKind): EditOp {
   }
 }
 
-/** Panel pro skládání editačních operací. */
+/** Panel for composing edit operations. */
 export class OperationsPanel {
   private container!: HTMLElement;
   private listEl!: HTMLElement;
@@ -48,19 +47,16 @@ export class OperationsPanel {
   private render(): void {
     this.container.empty();
 
-    const adder = this.container.createDiv({ cls: "me-op-adder" });
-    const sel = adder.createEl("select", { cls: "me-select" });
+    const add = this.container.createDiv({ cls: "me-op-add" });
+    const sel = add.createEl("select", { cls: "dropdown" });
     OP_MENU.forEach((o) => {
       const opt = sel.createEl("option", { text: o.label });
       opt.value = o.kind;
     });
-    const addBtn = adder.createEl("button", {
-      cls: "me-text-btn",
-      text: "Přidat operaci",
-    });
+    const addBtn = add.createEl("button", { cls: "me-add" });
     const ic = addBtn.createSpan();
     setIcon(ic, "plus");
-    addBtn.prepend(ic);
+    addBtn.createSpan({ text: "Add operation" });
     addBtn.onclick = () => {
       this.ops.push(newOp(sel.value as OpKind));
       this.render();
@@ -69,10 +65,7 @@ export class OperationsPanel {
 
     this.listEl = this.container.createDiv({ cls: "me-op-list" });
     if (this.ops.length === 0) {
-      this.listEl.createDiv({
-        cls: "me-empty",
-        text: "Zatím žádná operace. Přidejte alespoň jednu.",
-      });
+      this.listEl.createDiv({ cls: "me-empty", text: "No operations yet." });
     }
     this.ops.forEach((op, i) => this.renderOp(op, i));
   }
@@ -83,19 +76,16 @@ export class OperationsPanel {
 
     const head = card.createDiv({ cls: "me-op__head" });
     head.createSpan({ cls: "me-op__title", text: OP_LABELS[op.kind] });
-    const del = head.createEl("button", {
-      cls: "me-icon-btn me-icon-btn--danger",
-    });
+    const del = head.createEl("div", { cls: "clickable-icon" });
     setIcon(del, "x");
-    del.setAttribute("aria-label", "Odebrat operaci");
+    del.setAttribute("aria-label", "Remove operation");
     del.onclick = () => {
       this.ops.splice(index, 1);
       this.render();
       this.onChange();
     };
 
-    const body = card.createDiv({ cls: "me-op__body" });
-    this.renderFields(body, op);
+    this.renderFields(card.createDiv({ cls: "me-op-fields" }), op);
   }
 
   private text(
@@ -103,10 +93,10 @@ export class OperationsPanel {
     placeholder: string,
     value: string,
     set: (v: string) => void,
-    cls = ""
-  ): void {
+    cls = "me-value"
+  ): HTMLInputElement {
     const el = parent.createEl("input", {
-      cls: "me-input " + cls,
+      cls,
       attr: { type: "text", placeholder },
     });
     el.value = value;
@@ -114,15 +104,16 @@ export class OperationsPanel {
       set(el.value);
       this.refreshValidity();
     };
+    return el;
   }
 
   private renderFields(body: HTMLElement, op: EditOp): void {
     switch (op.kind) {
       case "fm-set":
       case "fm-add": {
-        this.text(body, "klíč", op.key, (v) => (op.key = v), "me-input--key");
-        this.text(body, "hodnota", op.value, (v) => (op.value = v));
-        const sel = body.createEl("select", { cls: "me-select" });
+        this.text(body, "key", op.key, (v) => (op.key = v), "me-key");
+        this.text(body, "value", op.value, (v) => (op.value = v));
+        const sel = body.createEl("select", { cls: "dropdown" });
         (["string", "number", "boolean", "list"] as FmValueType[]).forEach(
           (t) => {
             const o = sel.createEl("option", { text: t });
@@ -137,41 +128,32 @@ export class OperationsPanel {
         break;
       }
       case "fm-delete":
-        this.text(body, "klíč", op.key, (v) => (op.key = v), "me-input--key");
+        this.text(body, "key", op.key, (v) => (op.key = v), "me-key");
         break;
       case "fm-list-append":
-        this.text(body, "klíč", op.key, (v) => (op.key = v), "me-input--key");
-        this.text(body, "hodnota", op.value, (v) => (op.value = v));
+        this.text(body, "key", op.key, (v) => (op.key = v), "me-key");
+        this.text(body, "value", op.value, (v) => (op.value = v));
         break;
       case "tag-add":
       case "tag-remove":
-        this.text(body, "tag (bez #)", op.tag, (v) => (op.tag = v));
+        this.text(body, "tag (without #)", op.tag, (v) => (op.tag = v));
         break;
       case "body-regex": {
+        this.text(body, "pattern", op.pattern, (v) => (op.pattern = v));
+        this.text(body, "flags", op.flags, (v) => (op.flags = v), "me-flags");
         this.text(
           body,
-          "vzor (regex)",
-          op.pattern,
-          (v) => (op.pattern = v),
-          "me-input--grow"
-        );
-        this.text(body, "flags", op.flags, (v) => (op.flags = v), "me-input--flags");
-        this.text(
-          body,
-          "náhrada ($1, $2…)",
+          "replacement ($1, $2…)",
           op.replacement,
-          (v) => (op.replacement = v),
-          "me-input--grow"
+          (v) => (op.replacement = v)
         );
-        const err = body.createDiv({ cls: "me-op__err" });
+        const err = body.createDiv({ cls: "me-op__error" });
         const validate = () => {
           try {
             new RegExp(op.pattern, op.flags);
             err.setText("");
-            err.removeClass("is-visible");
           } catch (e) {
-            err.setText(e instanceof Error ? e.message : "Neplatný regex");
-            err.addClass("is-visible");
+            err.setText(e instanceof Error ? e.message : "Invalid regex");
           }
         };
         validate();
@@ -183,7 +165,6 @@ export class OperationsPanel {
       case "body-append":
       case "body-prepend": {
         const ta = body.createEl("textarea", {
-          cls: "me-textarea",
           attr: { placeholder: "text…", rows: "3" },
         });
         ta.value = op.text;
@@ -205,5 +186,3 @@ export class OperationsPanel {
     this.onChange();
   }
 }
-
-export { uid };

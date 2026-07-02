@@ -17,11 +17,11 @@ export interface RunManifest {
   files: BackupFileEntry[];
 }
 
-/** Lehký záznam v historii (data.json); plný manifest žije ve složce běhu. */
+/** Lightweight history record (data.json); the full manifest lives in the run folder. */
 export interface RunRecord {
   runId: string;
   timestamp: number;
-  root: string; // kořen záloh, kde běh leží
+  root: string; // backup root where the run is stored
   fileCount: number;
   opCount: number;
   undone?: boolean;
@@ -29,7 +29,7 @@ export interface RunRecord {
 
 export interface UndoChoice {
   path: string;
-  drifted: boolean; // soubor byl mezitím ručně změněn
+  drifted: boolean; // file was manually changed in the meantime
 }
 
 export interface UndoPlan {
@@ -43,7 +43,7 @@ export interface UndoResult {
   errors: string[];
 }
 
-/** Rychlý synchronní hash (FNV-1a, 32-bit) — bez závislostí, stačí na drift. */
+/** Fast synchronous hash (FNV-1a, 32-bit) — dependency-free, enough for drift. */
 export function hashString(s: string): string {
   let h = 0x811c9dc5;
   for (let i = 0; i < s.length; i++) {
@@ -72,7 +72,7 @@ export class BackupManager {
     this.adapter = app.vault.adapter;
   }
 
-  /** Kořen pro zálohy — buď nastavená složka, nebo složka pluginu. */
+  /** Backup root — either the configured folder or the plugin folder. */
   backupRoot(): string {
     const folder = this.getOpts().backupFolder.trim().replace(/\/+$/, "");
     return folder !== "" ? folder : `${this.pluginDir}/backups`;
@@ -94,8 +94,8 @@ export class BackupManager {
   }
 
   /**
-   * Vytvoří běh: zazálohuje obsah všech souborů, zapíše iniciální manifest.
-   * Vrací runId a mapu path→hashBefore (pro pozdější hashAfter).
+   * Creates a run: backs up the content of all files, writes the initial manifest.
+   * Returns the runId and manifest (hashAfter filled in later).
    */
   async createRun(
     files: TFile[],
@@ -145,7 +145,7 @@ export class BackupManager {
     );
   }
 
-  /** Dopočítá hashAfter, uloží manifest, zapíše do historie + retence. */
+  /** Fills in hashAfter, saves the manifest, records history + retention. */
   async finalizeRun(
     manifest: RunManifest,
     afterHashes: Map<string, string>
@@ -178,7 +178,7 @@ export class BackupManager {
     }
   }
 
-  /** Zjistí, které soubory driftovaly (od aplikace byly ručně změněny). */
+  /** Finds which files drifted (were manually changed since the edit). */
   async planUndo(record: RunRecord): Promise<UndoPlan | null> {
     const manifest = await this.readManifest(record);
     if (!manifest) return null;
@@ -194,7 +194,7 @@ export class BackupManager {
           drifted = true;
         }
       } else {
-        // soubor neexistuje (přesunut/smazán) → považuj za drift
+        // file missing (moved/deleted) → treat as drift
         drifted = true;
       }
       entries.push({ path: entry.path, drifted });
@@ -203,8 +203,8 @@ export class BackupManager {
   }
 
   /**
-   * Provede undo. `overwriteDrifted` = přepsat i soubory, které driftovaly.
-   * Bez něj se driftované soubory přeskočí.
+   * Performs undo. `overwriteDrifted` = also overwrite files that drifted.
+   * Without it, drifted files are skipped.
    */
   async undoRun(
     record: RunRecord,
@@ -213,14 +213,14 @@ export class BackupManager {
     const manifest = await this.readManifest(record);
     const result: UndoResult = { restored: 0, skipped: 0, errors: [] };
     if (!manifest) {
-      result.errors.push("Manifest běhu nenalezen.");
+      result.errors.push("Run manifest not found.");
       return result;
     }
 
     for (const entry of manifest.files) {
       try {
         if (!(await this.adapter.exists(entry.backupPath))) {
-          result.errors.push(`Chybí záloha: ${entry.path}`);
+          result.errors.push(`Missing backup: ${entry.path}`);
           result.skipped++;
           continue;
         }
@@ -236,7 +236,7 @@ export class BackupManager {
           }
           await this.app.vault.modify(file as TFile, backup);
         } else {
-          // soubor zmizel — obnov ho na původní cestu
+          // file is gone — recreate it at its original path
           await this.ensureVaultDir(entry.path);
           await this.app.vault.create(entry.path, backup);
         }
@@ -262,7 +262,7 @@ export class BackupManager {
     }
   }
 
-  /** Smaže běh (složku i záznam v historii). */
+  /** Deletes a run (folder and history record). */
   async deleteRun(record: RunRecord): Promise<void> {
     const runDir = `${record.root}/${record.runId}`;
     await this.removeDir(runDir);
@@ -281,7 +281,7 @@ export class BackupManager {
         await anyAdapter.rmdir(path, true);
         return;
       }
-      // fallback: rekurzivní list + remove
+      // fallback: recursive list + remove
       const listing = await this.adapter.list(path);
       for (const f of listing.files) await this.adapter.remove(f);
       for (const d of listing.folders) await this.removeDir(d);
@@ -290,7 +290,7 @@ export class BackupManager {
     }
   }
 
-  /** Ořízne nejstarší běhy nad limit retence. */
+  /** Prunes the oldest runs above the retention limit. */
   async pruneRetention(): Promise<void> {
     const { retention } = this.getOpts();
     if (retention <= 0) return;
