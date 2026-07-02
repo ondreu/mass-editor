@@ -1,4 +1,4 @@
-import type { TFile } from "obsidian";
+import { type App, setIcon, type TFile } from "obsidian";
 import { noteCount } from "./dom";
 
 const ROW_HEIGHT = 30; // px, must match .me-result in styles.css
@@ -14,7 +14,11 @@ export class ResultsList {
   private countEl!: HTMLElement;
   private headerCheck!: HTMLInputElement;
 
-  constructor(selected: Set<string>, private onChange: () => void) {
+  constructor(
+    private app: App,
+    selected: Set<string>,
+    private onChange: () => void
+  ) {
     this.selected = selected;
   }
 
@@ -93,13 +97,36 @@ export class ResultsList {
       };
       cb.onchange = toggle;
 
-      row.createDiv({ cls: "me-result__name", text: file.basename });
+      // Clicking the name opens the note; hovering shows the page preview.
+      const name = row.createDiv({ cls: "me-result__name", text: file.basename });
+      name.onclick = (e) => {
+        e.stopPropagation();
+        this.app.workspace.openLinkText(file.path, file.path, e.ctrlKey || e.metaKey);
+      };
+      name.addEventListener("mouseover", (e) => {
+        this.app.workspace.trigger("hover-link", {
+          event: e,
+          source: "mass-editor",
+          hoverParent: this.viewport,
+          targetEl: name,
+          linktext: file.path,
+        });
+      });
+
       const dir =
         file.parent && file.parent.path !== "/" ? file.parent.path : "";
       if (dir) row.createDiv({ cls: "me-result__path", text: dir });
 
-      row.onclick = (e) => {
-        if (e.target === cb) return;
+      const open = row.createDiv({ cls: "clickable-icon me-result__open" });
+      setIcon(open, "external-link");
+      open.setAttribute("aria-label", "Open in new tab");
+      open.onclick = (e) => {
+        e.stopPropagation();
+        this.app.workspace.openLinkText(file.path, file.path, true);
+      };
+
+      // Clicking elsewhere on the row toggles the checkbox.
+      row.onclick = () => {
         cb.checked = !cb.checked;
         toggle();
       };

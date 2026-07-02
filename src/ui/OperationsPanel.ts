@@ -1,10 +1,11 @@
-import { setIcon } from "obsidian";
+import { type App, setIcon } from "obsidian";
 import {
   type EditOp,
   type FmValueType,
   OP_LABELS,
   isOpValid,
 } from "../edit/operations";
+import { ListSuggest, type SuggestSources } from "./suggest";
 
 type OpKind = EditOp["kind"];
 
@@ -37,7 +38,12 @@ export class OperationsPanel {
   private container!: HTMLElement;
   private listEl!: HTMLElement;
 
-  constructor(private ops: EditOp[], private onChange: () => void) {}
+  constructor(
+    private ops: EditOp[],
+    private app: App,
+    private sources: SuggestSources,
+    private onChange: () => void
+  ) {}
 
   mount(container: HTMLElement): void {
     this.container = container;
@@ -93,7 +99,8 @@ export class OperationsPanel {
     placeholder: string,
     value: string,
     set: (v: string) => void,
-    cls = "me-value"
+    cls = "me-value",
+    suggest?: () => string[]
   ): HTMLInputElement {
     const el = parent.createEl("input", {
       cls,
@@ -104,6 +111,12 @@ export class OperationsPanel {
       set(el.value);
       this.refreshValidity();
     };
+    if (suggest) {
+      new ListSuggest(this.app, el, suggest, (v) => {
+        set(v);
+        this.refreshValidity();
+      });
+    }
     return el;
   }
 
@@ -111,7 +124,9 @@ export class OperationsPanel {
     switch (op.kind) {
       case "fm-set":
       case "fm-add": {
-        this.text(body, "key", op.key, (v) => (op.key = v), "me-key");
+        this.text(body, "key", op.key, (v) => (op.key = v), "me-key", () =>
+          this.sources.frontmatterKeys()
+        );
         this.text(body, "value", op.value, (v) => (op.value = v));
         const sel = body.createEl("select", { cls: "dropdown" });
         (["string", "number", "boolean", "list"] as FmValueType[]).forEach(
@@ -128,15 +143,26 @@ export class OperationsPanel {
         break;
       }
       case "fm-delete":
-        this.text(body, "key", op.key, (v) => (op.key = v), "me-key");
+        this.text(body, "key", op.key, (v) => (op.key = v), "me-key", () =>
+          this.sources.frontmatterKeys()
+        );
         break;
       case "fm-list-append":
-        this.text(body, "key", op.key, (v) => (op.key = v), "me-key");
+        this.text(body, "key", op.key, (v) => (op.key = v), "me-key", () =>
+          this.sources.frontmatterKeys()
+        );
         this.text(body, "value", op.value, (v) => (op.value = v));
         break;
       case "tag-add":
       case "tag-remove":
-        this.text(body, "tag (without #)", op.tag, (v) => (op.tag = v));
+        this.text(
+          body,
+          "tag (without #)",
+          op.tag,
+          (v) => (op.tag = v),
+          "me-value",
+          () => this.sources.tags()
+        );
         break;
       case "body-regex": {
         this.text(body, "pattern", op.pattern, (v) => (op.pattern = v));
