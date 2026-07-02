@@ -1,0 +1,6 @@
+node_modules/
+*.js.map
+.DS_Store
+data.json
+
+# Keep the built main.js committed for BRAT installation.
