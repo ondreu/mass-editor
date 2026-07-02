@@ -178,6 +178,41 @@ export class BackupManager {
     }
   }
 
+  /**
+   * Loads the "before" (backup) and "after" (current) content of one file in a
+   * run, for a git-style comparison. Returns null if the run manifest or the
+   * file's backup entry can't be found. `after` is "" when the file is gone.
+   */
+  async getDiff(
+    record: RunRecord,
+    path: string
+  ): Promise<{ before: string; after: string } | null> {
+    const manifest = await this.readManifest(record);
+    if (!manifest) return null;
+    const entry = manifest.files.find((e) => e.path === path);
+    if (!entry) return null;
+
+    let before = "";
+    try {
+      if (await this.adapter.exists(entry.backupPath)) {
+        before = await this.adapter.read(entry.backupPath);
+      }
+    } catch {
+      /* best-effort */
+    }
+
+    let after = "";
+    const file = this.app.vault.getAbstractFileByPath(path);
+    if (file && "stat" in file) {
+      try {
+        after = await this.app.vault.read(file as TFile);
+      } catch {
+        /* best-effort */
+      }
+    }
+    return { before, after };
+  }
+
   /** Finds which files drifted (were manually changed since the edit). */
   async planUndo(record: RunRecord): Promise<UndoPlan | null> {
     const manifest = await this.readManifest(record);

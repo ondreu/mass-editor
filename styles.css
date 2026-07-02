@@ -480,3 +480,83 @@
 .me-history__file-actions {
   margin-top: 6px;
 }
+.me-history__diff {
+  margin-left: 6px;
+  flex: 0 0 auto;
+}
+.me-history__file-path {
+  flex: 1;
+}
+
+/* ---- diff (git comparison) ---- */
+.me-diff-modal {
+  max-width: min(860px, 92vw);
+}
+.me-diff__path {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-family: var(--font-monospace);
+  word-break: break-all;
+  margin-bottom: 4px;
+}
+.me-diff__stats {
+  display: flex;
+  gap: 10px;
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+.me-diff__stat-add {
+  color: var(--text-success, var(--color-green));
+}
+.me-diff__stat-del {
+  color: var(--text-error);
+}
+.me-diff {
+  max-height: 60vh;
+  overflow: auto;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  background: var(--background-primary);
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-smaller);
+  line-height: 1.5;
+}
+.me-diff__hunk-head {
+  padding: 2px 8px;
+  color: var(--text-muted);
+  background: var(--background-secondary);
+  border-top: 1px solid var(--background-modifier-border);
+  position: sticky;
+  left: 0;
+}
+.me-diff__hunk-head:first-child {
+  border-top: none;
+}
+.me-diff__line {
+  display: flex;
+  white-space: pre;
+  padding: 0 8px;
+}
+.me-diff__line.is-add {
+  background: var(--background-modifier-success, rgba(76, 175, 80, 0.15));
+}
+.me-diff__line.is-del {
+  background: var(--background-modifier-error, rgba(244, 67, 54, 0.15));
+}
+.me-diff__marker {
+  flex: 0 0 auto;
+  width: 12px;
+  color: var(--text-faint);
+  user-select: none;
+}
+.me-diff__line.is-add .me-diff__marker {
+  color: var(--text-success, var(--color-green));
+}
+.me-diff__line.is-del .me-diff__marker {
+  color: var(--text-error);
+}
+.me-diff__text {
+  flex: 1 1 auto;
+}

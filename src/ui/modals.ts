@@ -5,6 +5,7 @@ import type {
   RunRecord,
   UndoPlan,
 } from "../backup/backupManager";
+import { buildHunks, diffLines, diffStats, hunkHeader } from "../edit/diff";
 import { noteCount } from "./dom";
 
 /** Confirmation dialog showing the impact summary. */
@@ -147,6 +148,16 @@ export class HistoryModal extends Modal {
       r.createSpan({ cls: "me-history__file-path", text: entry.path });
       if (entry.drifted)
         r.createSpan({ cls: "me-history__drift", text: "changed" });
+
+      const diff = r.createEl("div", { cls: "clickable-icon me-history__diff" });
+      setIcon(diff, "git-compare");
+      diff.setAttribute("aria-label", "View changes");
+      diff.onclick = (ev: MouseEvent) => {
+        // The row is a <label> — stop it from toggling the checkbox.
+        ev.preventDefault();
+        ev.stopPropagation();
+        new DiffModal(this.app, this.backup, rec, entry.path).open();
+      };
     }
     const actions = panel.createDiv({ cls: "me-history__file-actions" });
     const btn = actions.createEl("button", {
@@ -240,6 +251,73 @@ export class UndoDriftModal extends Modal {
       this.close();
       this.onChoose(true);
     };
+  }
+
+  onClose(): void {
+    this.contentEl.empty();
+  }
+}
+
+/** Git-style comparison of a file's backup ("before") and current ("after"). */
+export class DiffModal extends Modal {
+  constructor(
+    app: App,
+    private backup: BackupManager,
+    private record: RunRecord,
+    private path: string
+  ) {
+    super(app);
+  }
+
+  onOpen(): void {
+    void this.render();
+  }
+
+  private async render(): Promise<void> {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("me-modal");
+    contentEl.addClass("me-diff-modal");
+    contentEl.createEl("h3", { text: "Changes" });
+    contentEl.createDiv({ cls: "me-diff__path", text: this.path });
+
+    const data = await this.backup.getDiff(this.record, this.path);
+    if (!data) {
+      contentEl.createDiv({ cls: "me-op__error", text: "Backup not found." });
+      return;
+    }
+
+    const lines = diffLines(data.before, data.after);
+    const { added, removed } = diffStats(lines);
+
+    const stats = contentEl.createDiv({ cls: "me-diff__stats" });
+    if (added === 0 && removed === 0) {
+      stats.setText("No changes (identical to backup).");
+    } else {
+      stats.createSpan({ cls: "me-diff__stat-add", text: `+${added}` });
+      stats.createSpan({ cls: "me-diff__stat-del", text: `−${removed}` });
+    }
+
+    const hunks = buildHunks(lines);
+    if (hunks.length === 0) return;
+
+    const view = contentEl.createDiv({ cls: "me-diff" });
+    for (const hunk of hunks) {
+      view.createDiv({ cls: "me-diff__hunk-head", text: hunkHeader(hunk) });
+      for (const line of hunk.lines) {
+        const cls =
+          line.op === "add"
+            ? "me-diff__line is-add"
+            : line.op === "del"
+              ? "me-diff__line is-del"
+              : "me-diff__line";
+        const row = view.createDiv({ cls });
+        const marker = line.op === "add" ? "+" : line.op === "del" ? "-" : " ";
+        row.createSpan({ cls: "me-diff__marker", text: marker });
+        // Preserve the raw line text (including leading whitespace).
+        row.createSpan({ cls: "me-diff__text", text: line.text });
+      }
+    }
   }
 
   onClose(): void {

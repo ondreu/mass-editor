@@ -13,6 +13,7 @@ The UI inherits your active Obsidian theme.
 - **Result selection** via checkboxes (all selected by default), with a live count.
 - **Impact summary** before applying (note count, per-operation breakdown, regex match count + warnings).
 - **Backup + undo:** each run is a single transaction; restore from backup with drift detection.
+- **Git-style diff:** inspect exactly what an edit changed in any note — a line-by-line comparison (backup *before* vs current *after*) from the history panel.
 - **Layout:** single pane on desktop, two tabs on mobile.
 
 ## Install via BRAT
@@ -38,6 +39,7 @@ Operation order is fixed and deterministic: **frontmatter → tags → regex →
 - Each edit run first backs up the affected files and writes a `manifest.json`.
 - History and *Undo* are behind the history icon in the toolbar.
 - Undo restores files from the backup. If a file was manually changed in the meantime (drift), the plugin warns and offers *skip / overwrite*.
+- **View changes:** expand a run and click the compare icon (⎇) next to a file for a git-style, line-by-line diff of the backup against the note's current content. Additions are green, deletions red; unchanged runs are collapsed into hunks with surrounding context.
 
 > **Backup location tradeoff:** the default backup folder is inside the plugin folder (`.obsidian/plugins/mass-editor/backups/`). That folder **may not sync** and **reinstalling the plugin can delete it**. For durable backups, set a path **inside your vault** (`backupFolder`) in Settings.
 
@@ -61,7 +63,7 @@ npm run build    # typecheck + production bundle
 npm test         # unit tests (engine, operators, op ordering)
 ```
 
-Key modules: `src/query` (types, operators, evaluator, engine), `src/edit` (operations, applier, summary), `src/backup` (backups + undo), `src/ui` (DOM components), `src/view` (main view).
+Key modules: `src/query` (types, operators, evaluator, engine), `src/edit` (operations, applier, summary, diff), `src/backup` (backups + undo), `src/ui` (DOM components), `src/view` (main view).
 
 Implementation safety: frontmatter/tags are edited exclusively through `app.fileManager.processFrontMatter`, and bodies through `app.vault.process` (atomic). No manual YAML parsing.
 
