@@ -1,4 +1,5 @@
 import { type App, setIcon, type TFile } from "obsidian";
+import { MatchPreviewModal, type RegexSpec } from "./modals";
 import { noteCount } from "./dom";
 
 const ROW_HEIGHT = 30; // px, must match .me-result in styles.css
@@ -17,7 +18,9 @@ export class ResultsList {
   constructor(
     private app: App,
     selected: Set<string>,
-    private onChange: () => void
+    private onChange: () => void,
+    /** Returns the current body-regex operations (for the match preview). */
+    private getRegexSpecs: () => RegexSpec[] = () => []
   ) {
     this.selected = selected;
   }
@@ -116,6 +119,17 @@ export class ResultsList {
       const dir =
         file.parent && file.parent.path !== "/" ? file.parent.path : "";
       if (dir) row.createDiv({ cls: "me-result__path", text: dir });
+
+      const specs = this.getRegexSpecs();
+      if (specs.length > 0) {
+        const peek = row.createDiv({ cls: "clickable-icon me-result__peek" });
+        setIcon(peek, "search");
+        peek.setAttribute("aria-label", "Preview regex matches");
+        peek.onclick = (e) => {
+          e.stopPropagation();
+          new MatchPreviewModal(this.app, file, specs).open();
+        };
+      }
 
       const open = row.createDiv({ cls: "clickable-icon me-result__open" });
       setIcon(open, "external-link");

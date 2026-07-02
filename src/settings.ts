@@ -2,6 +2,16 @@ import { type App, PluginSettingTab, Setting } from "obsidian";
 import type MassEditorPlugin from "./main";
 import type { RunRecord } from "./backup/backupManager";
 import type { RegexScope } from "./edit/applier";
+import type { EditOp } from "./edit/operations";
+import type { Group } from "./query/types";
+
+/** A saved query + operations template. */
+export interface Preset {
+  id: string;
+  name: string;
+  query: Group;
+  ops: EditOp[];
+}
 
 export interface MassEditSettings {
   backupFolder: string;
@@ -10,6 +20,12 @@ export interface MassEditSettings {
   defaultSelectAll: boolean;
   regexScope: RegexScope;
   liveCountDebounceMs: number;
+  /** Side-by-side layout as the default for diff views. */
+  diffSplitView: boolean;
+  /** Vault folder for exported run reports. */
+  reportFolder: string;
+  /** Saved query + operation templates. */
+  presets: Preset[];
   /** Run history for undo. */
   history: RunRecord[];
 }
@@ -21,6 +37,9 @@ export const DEFAULT_SETTINGS: MassEditSettings = {
   defaultSelectAll: true,
   regexScope: "body",
   liveCountDebounceMs: 200,
+  diffSplitView: false,
+  reportFolder: "Mass Editor Reports",
+  presets: [],
   history: [],
 };
 
@@ -97,6 +116,29 @@ export class MassEditSettingTab extends PluginSettingTab {
             this.plugin.settings.regexScope = v as RegexScope;
             await this.plugin.saveSettings();
           })
+      );
+
+    new Setting(containerEl)
+      .setName("Report folder")
+      .setDesc("Vault folder where exported run reports (Markdown) are saved.")
+      .addText((t) =>
+        t
+          .setPlaceholder("Mass Editor Reports")
+          .setValue(this.plugin.settings.reportFolder)
+          .onChange(async (v) => {
+            this.plugin.settings.reportFolder = v.trim();
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("Side-by-side diff by default")
+      .setDesc("Show the diff view in a two-column layout instead of unified.")
+      .addToggle((t) =>
+        t.setValue(this.plugin.settings.diffSplitView).onChange(async (v) => {
+          this.plugin.settings.diffSplitView = v;
+          await this.plugin.saveSettings();
+        })
       );
 
     new Setting(containerEl)

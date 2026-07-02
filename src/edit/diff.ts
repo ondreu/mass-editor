@@ -34,6 +34,11 @@ function splitLines(text: string): string[] {
   return text.replace(/\r\n/g, "\n").split("\n");
 }
 
+/** LCS-based diff of two token/line arrays (no common-affix trimming). */
+export function diffSequence(a: string[], b: string[]): DiffLine[] {
+  return lcsDiff(a, b);
+}
+
 /** LCS-based diff of two line arrays (no common-affix trimming). */
 function lcsDiff(a: string[], b: string[]): DiffLine[] {
   const n = a.length;
@@ -177,4 +182,40 @@ export function buildHunks(lines: DiffLine[], context = 3): Hunk[] {
 /** Git-style hunk header, e.g. `@@ -3,4 +3,5 @@`. */
 export function hunkHeader(h: Hunk): string {
   return `@@ -${h.beforeStart},${h.beforeLines} +${h.afterStart},${h.afterLines} @@`;
+}
+
+/** Splits a line into word / whitespace / punctuation tokens (all chars kept). */
+export function tokenize(line: string): string[] {
+  return line.match(/(\s+|[\p{L}\p{N}_]+|[^\s\p{L}\p{N}_]+)/gu) ?? [];
+}
+
+/**
+ * Intra-line word diff between a removed and an added line. Used to highlight
+ * only the parts that actually changed within a replaced line.
+ */
+export function diffTokens(before: string, after: string): DiffLine[] {
+  return diffSequence(tokenize(before), tokenize(after));
+}
+
+/**
+ * Builds a git-style unified diff patch (text). Suitable for a ```diff block.
+ * `path` fills the ---/+++ headers.
+ */
+export function unifiedDiff(
+  before: string,
+  after: string,
+  path = "note",
+  context = 3
+): string {
+  const hunks = buildHunks(diffLines(before, after), context);
+  if (hunks.length === 0) return "";
+  const out: string[] = [`--- a/${path}`, `+++ b/${path}`];
+  for (const h of hunks) {
+    out.push(hunkHeader(h));
+    for (const line of h.lines) {
+      const marker = line.op === "add" ? "+" : line.op === "del" ? "-" : " ";
+      out.push(marker + line.text);
+    }
+  }
+  return out.join("\n");
 }

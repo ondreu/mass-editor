@@ -58,8 +58,9 @@ export default class MassEditorPlugin extends Plugin {
   async loadSettings(): Promise<void> {
     const data = await this.loadData();
     this.settings = Object.assign({}, DEFAULT_SETTINGS, data);
-    // history must be an array
+    // history and presets must be arrays
     if (!Array.isArray(this.settings.history)) this.settings.history = [];
+    if (!Array.isArray(this.settings.presets)) this.settings.presets = [];
   }
 
   async saveSettings(): Promise<void> {

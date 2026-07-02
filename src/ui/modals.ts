@@ -1,19 +1,35 @@
-import { type App, Modal, setIcon } from "obsidian";
+import { type App, Modal, Notice, type TFile, setIcon } from "obsidian";
 import type { ImpactSummary } from "../edit/summary";
 import type {
   BackupManager,
   RunRecord,
   UndoPlan,
 } from "../backup/backupManager";
-import { buildHunks, diffLines, diffStats, hunkHeader } from "../edit/diff";
-import { noteCount } from "./dom";
+import type MassEditorPlugin from "../main";
+import type { Preset } from "../settings";
+import type { Group } from "../query/types";
+import { type EditOp, orderOps } from "../edit/operations";
+import { type RegexScope, transformBody } from "../edit/applier";
+import { buildReport, writeReport } from "../edit/report";
+import { renderDiff } from "./diffView";
+import { noteCount, uid } from "./dom";
+
+const FM_KINDS = new Set<EditOp["kind"]>([
+  "fm-set",
+  "fm-add",
+  "fm-delete",
+  "fm-list-append",
+  "tag-add",
+  "tag-remove",
+]);
 
 /** Confirmation dialog showing the impact summary. */
 export class ConfirmApplyModal extends Modal {
   constructor(
     app: App,
     private summary: ImpactSummary,
-    private onConfirm: () => void
+    private onConfirm: () => void,
+    private onPreview?: () => void
   ) {
     super(app);
   }
@@ -37,6 +53,10 @@ export class ConfirmApplyModal extends Modal {
     const buttons = contentEl.createDiv({ cls: "modal-button-container" });
     const cancel = buttons.createEl("button", { text: "Cancel" });
     cancel.onclick = () => this.close();
+    if (this.onPreview) {
+      const preview = buttons.createEl("button", { text: "Preview changes" });
+      preview.onclick = () => this.onPreview?.();
+    }
     const apply = buttons.createEl("button", {
       cls: "mod-cta",
       text: "Apply",
@@ -54,12 +74,15 @@ export class ConfirmApplyModal extends Modal {
 
 /** Run history + undo. */
 export class HistoryModal extends Modal {
+  private backup: BackupManager;
+
   constructor(
     app: App,
-    private backup: BackupManager,
+    private plugin: MassEditorPlugin,
     private onAfterUndo: () => void
   ) {
     super(app);
+    this.backup = plugin.backup;
   }
 
   onOpen(): void {
@@ -98,6 +121,11 @@ export class HistoryModal extends Modal {
         rec.undone ? " · reverted" : ""
       }`,
     });
+
+    const exportBtn = row.createEl("div", { cls: "clickable-icon" });
+    setIcon(exportBtn, "file-down");
+    exportBtn.setAttribute("aria-label", "Export report (Markdown)");
+    exportBtn.onclick = () => void this.doExport(rec);
 
     const undo = row.createEl("button", {
       cls: "mod-warning",
@@ -156,7 +184,7 @@ export class HistoryModal extends Modal {
         // The row is a <label> — stop it from toggling the checkbox.
         ev.preventDefault();
         ev.stopPropagation();
-        new DiffModal(this.app, this.backup, rec, entry.path).open();
+        new DiffModal(this.app, this.plugin, rec, entry.path).open();
       };
     }
     const actions = panel.createDiv({ cls: "me-history__file-actions" });
@@ -204,6 +232,21 @@ export class HistoryModal extends Modal {
       ...res.errors.map((e) => `Error: ${e}`),
     ]).open();
     this.render();
+  }
+
+  private async doExport(rec: RunRecord): Promise<void> {
+    try {
+      const md = await buildReport(this.app, this.backup, rec);
+      if (md === null) {
+        new Notice("Mass Editor: backup not found for this run.");
+        return;
+      }
+      const path = await writeReport(this.app, this.plugin, rec, md);
+      new Notice(`Mass Editor: report saved to ${path}`);
+      await this.app.workspace.openLinkText(path, path, true);
+    } catch (e) {
+      new Notice("Export failed: " + (e as Error).message);
+    }
   }
 }
 
@@ -258,11 +301,53 @@ export class UndoDriftModal extends Modal {
   }
 }
 
+/** A unified/split toggle bound to the plugin's persisted preference. */
+function viewToggle(
+  parent: HTMLElement,
+  plugin: MassEditorPlugin,
+  onChange: () => void
+): void {
+  const wrap = parent.createDiv({ cls: "me-diff__toggle" });
+  const mk = (label: string, split: boolean) => {
+    const b = wrap.createEl("button", { text: label });
+    if (plugin.settings.diffSplitView === split) b.addClass("is-active");
+    b.onclick = () => {
+      if (plugin.settings.diffSplitView === split) return;
+      plugin.settings.diffSplitView = split;
+      void plugin.saveSettings();
+      onChange();
+    };
+  };
+  mk("Unified", false);
+  mk("Split", true);
+}
+
+/** Renders a stats line + diff view (respecting the persisted layout). */
+function renderDiffBlock(
+  parent: HTMLElement,
+  before: string,
+  after: string,
+  split: boolean,
+  emptyText = "No changes."
+): void {
+  const stats = parent.createDiv({ cls: "me-diff__stats" });
+  const view = parent.createDiv();
+  const { added, removed } = renderDiff(view, before, after, { split });
+  if (added === 0 && removed === 0) {
+    stats.setText(emptyText);
+  } else {
+    stats.createSpan({ cls: "me-diff__stat-add", text: `+${added}` });
+    stats.createSpan({ cls: "me-diff__stat-del", text: `−${removed}` });
+  }
+}
+
 /** Git-style comparison of a file's backup ("before") and current ("after"). */
 export class DiffModal extends Modal {
+  private data: { before: string; after: string } | null = null;
+
   constructor(
     app: App,
-    private backup: BackupManager,
+    private plugin: MassEditorPlugin,
     private record: RunRecord,
     private path: string
   ) {
@@ -270,53 +355,138 @@ export class DiffModal extends Modal {
   }
 
   onOpen(): void {
-    void this.render();
+    void this.load();
   }
 
-  private async render(): Promise<void> {
+  private async load(): Promise<void> {
+    this.data = await this.plugin.backup.getDiff(this.record, this.path);
+    this.render();
+  }
+
+  private render(): void {
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass("me-modal");
     contentEl.addClass("me-diff-modal");
-    contentEl.createEl("h3", { text: "Changes" });
+
+    const head = contentEl.createDiv({ cls: "me-diff__header" });
+    head.createEl("h3", { text: "Changes" });
+    if (this.data) viewToggle(head, this.plugin, () => this.render());
     contentEl.createDiv({ cls: "me-diff__path", text: this.path });
 
-    const data = await this.backup.getDiff(this.record, this.path);
-    if (!data) {
+    if (!this.data) {
       contentEl.createDiv({ cls: "me-op__error", text: "Backup not found." });
       return;
     }
+    renderDiffBlock(
+      contentEl,
+      this.data.before,
+      this.data.after,
+      this.plugin.settings.diffSplitView,
+      "No changes (identical to backup)."
+    );
+  }
 
-    const lines = diffLines(data.before, data.after);
-    const { added, removed } = diffStats(lines);
+  onClose(): void {
+    this.contentEl.empty();
+  }
+}
 
-    const stats = contentEl.createDiv({ cls: "me-diff__stats" });
-    if (added === 0 && removed === 0) {
-      stats.setText("No changes (identical to backup).");
-    } else {
-      stats.createSpan({ cls: "me-diff__stat-add", text: `+${added}` });
-      stats.createSpan({ cls: "me-diff__stat-del", text: `−${removed}` });
+/**
+ * Dry-run preview of the pending edit on a sample of selected files. Shows the
+ * body transformation (regex / append / prepend); frontmatter and tag changes
+ * are summarised separately since they can't be simulated without writing.
+ */
+export class PreviewModal extends Modal {
+  private static readonly SAMPLE = 10;
+
+  constructor(
+    app: App,
+    private plugin: MassEditorPlugin,
+    private files: TFile[],
+    private ops: EditOp[],
+    private regexScope: RegexScope
+  ) {
+    super(app);
+  }
+
+  onOpen(): void {
+    void this.load();
+  }
+
+  private async load(): Promise<void> {
+    const ordered = orderOps(this.ops);
+    const bodyOps = ordered.filter((o) => !FM_KINDS.has(o.kind));
+    const hasFm = ordered.some((o) => FM_KINDS.has(o.kind));
+    const sample = this.files.slice(0, PreviewModal.SAMPLE);
+
+    const previews: { path: string; before: string; after: string; error?: string }[] =
+      [];
+    for (const file of sample) {
+      try {
+        const before = await this.app.vault.cachedRead(file);
+        const after =
+          bodyOps.length > 0
+            ? transformBody(this.app, file, before, bodyOps, this.regexScope, { n: 0 })
+            : before;
+        previews.push({ path: file.path, before, after });
+      } catch (e) {
+        previews.push({
+          path: file.path,
+          before: "",
+          after: "",
+          error: e instanceof Error ? e.message : String(e),
+        });
+      }
+    }
+    this.render(previews, hasFm, bodyOps.length === 0);
+  }
+
+  private render(
+    previews: { path: string; before: string; after: string; error?: string }[],
+    hasFm: boolean,
+    noBodyOps: boolean
+  ): void {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("me-modal");
+    contentEl.addClass("me-diff-modal");
+
+    const head = contentEl.createDiv({ cls: "me-diff__header" });
+    head.createEl("h3", { text: "Preview changes" });
+    viewToggle(head, this.plugin, () => void this.load());
+
+    contentEl.createDiv({
+      cls: "me-diff__note",
+      text: `Dry run on ${noteCount(previews.length)}${
+        this.files.length > previews.length
+          ? ` (first ${previews.length} of ${this.files.length})`
+          : ""
+      }. Nothing is written.`,
+    });
+    if (hasFm) {
+      contentEl.createDiv({
+        cls: "me-diff__note is-warn",
+        text: "Frontmatter / tag operations aren't shown here — see the impact summary for their counts.",
+      });
+    }
+    if (noBodyOps) {
+      contentEl.createDiv({
+        cls: "me-empty",
+        text: "No body operations to preview.",
+      });
+      return;
     }
 
-    const hunks = buildHunks(lines);
-    if (hunks.length === 0) return;
-
-    const view = contentEl.createDiv({ cls: "me-diff" });
-    for (const hunk of hunks) {
-      view.createDiv({ cls: "me-diff__hunk-head", text: hunkHeader(hunk) });
-      for (const line of hunk.lines) {
-        const cls =
-          line.op === "add"
-            ? "me-diff__line is-add"
-            : line.op === "del"
-              ? "me-diff__line is-del"
-              : "me-diff__line";
-        const row = view.createDiv({ cls });
-        const marker = line.op === "add" ? "+" : line.op === "del" ? "-" : " ";
-        row.createSpan({ cls: "me-diff__marker", text: marker });
-        // Preserve the raw line text (including leading whitespace).
-        row.createSpan({ cls: "me-diff__text", text: line.text });
+    const split = this.plugin.settings.diffSplitView;
+    for (const p of previews) {
+      const block = contentEl.createDiv({ cls: "me-diff__file" });
+      block.createDiv({ cls: "me-diff__path", text: p.path });
+      if (p.error) {
+        block.createDiv({ cls: "me-op__error", text: p.error });
+        continue;
       }
+      renderDiffBlock(block, p.before, p.after, split, "No body change.");
     }
   }
 
@@ -345,6 +515,235 @@ export class ResultModal extends Modal {
     const actions = contentEl.createDiv({ cls: "modal-button-container" });
     const close = actions.createEl("button", { cls: "mod-cta", text: "Close" });
     close.onclick = () => this.close();
+  }
+
+  onClose(): void {
+    this.contentEl.empty();
+  }
+}
+
+function clone<T>(v: T): T {
+  return JSON.parse(JSON.stringify(v)) as T;
+}
+
+export interface RegexSpec {
+  pattern: string;
+  flags: string;
+}
+
+/** Shows lines matched by the current regex operations, with context. */
+export class MatchPreviewModal extends Modal {
+  private static readonly CONTEXT = 2;
+
+  constructor(
+    app: App,
+    private file: TFile,
+    private specs: RegexSpec[]
+  ) {
+    super(app);
+  }
+
+  onOpen(): void {
+    void this.load();
+  }
+
+  private async load(): Promise<void> {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("me-modal");
+    contentEl.addClass("me-diff-modal");
+    contentEl.createEl("h3", { text: "Regex matches" });
+    contentEl.createDiv({ cls: "me-diff__path", text: this.file.path });
+
+    let content = "";
+    try {
+      content = await this.app.vault.cachedRead(this.file);
+    } catch (e) {
+      contentEl.createDiv({
+        cls: "me-op__error",
+        text: e instanceof Error ? e.message : String(e),
+      });
+      return;
+    }
+    const lines = content.replace(/\r\n/g, "\n").split("\n");
+
+    // Build one global regex per spec (skip invalid).
+    const regexes: RegExp[] = [];
+    for (const s of this.specs) {
+      try {
+        regexes.push(
+          new RegExp(s.pattern, s.flags.includes("g") ? s.flags : s.flags + "g")
+        );
+      } catch {
+        /* invalid regex — skip */
+      }
+    }
+    if (regexes.length === 0) {
+      contentEl.createDiv({ cls: "me-empty", text: "No valid regex to match." });
+      return;
+    }
+
+    // Which lines match any regex?
+    const matched = new Set<number>();
+    for (let i = 0; i < lines.length; i++) {
+      for (const re of regexes) {
+        re.lastIndex = 0;
+        if (re.test(lines[i])) {
+          matched.add(i);
+          break;
+        }
+      }
+    }
+    if (matched.size === 0) {
+      contentEl.createDiv({ cls: "me-empty", text: "No matches in this note." });
+      return;
+    }
+
+    // Expand with context and merge into ranges.
+    const keep = new Set<number>();
+    for (const i of matched) {
+      for (
+        let k = Math.max(0, i - MatchPreviewModal.CONTEXT);
+        k <= Math.min(lines.length - 1, i + MatchPreviewModal.CONTEXT);
+        k++
+      )
+        keep.add(k);
+    }
+
+    contentEl.createDiv({
+      cls: "me-diff__note",
+      text: `${matched.size} matching line(s).`,
+    });
+    const view = contentEl.createDiv({ cls: "me-diff" });
+    let prev = -1;
+    Array.from(keep)
+      .sort((a, b) => a - b)
+      .forEach((i) => {
+        if (prev >= 0 && i > prev + 1) {
+          view.createDiv({ cls: "me-diff__hunk-head", text: "⋯" });
+        }
+        prev = i;
+        const row = view.createDiv({
+          cls: "me-diff__line" + (matched.has(i) ? " is-add" : ""),
+        });
+        row.createSpan({ cls: "me-diff__marker", text: String(i + 1) });
+        const textEl = row.createSpan({ cls: "me-diff__text" });
+        if (matched.has(i)) this.highlight(textEl, lines[i], regexes);
+        else textEl.setText(lines[i]);
+      });
+  }
+
+  /** Wraps the matched substrings of a line in highlight spans. */
+  private highlight(el: HTMLElement, line: string, regexes: RegExp[]): void {
+    // Collect match ranges across all regexes.
+    const ranges: [number, number][] = [];
+    for (const re of regexes) {
+      re.lastIndex = 0;
+      for (const m of line.matchAll(re)) {
+        const start = m.index ?? 0;
+        const end = start + m[0].length;
+        if (end > start) ranges.push([start, end]);
+      }
+    }
+    if (ranges.length === 0) {
+      el.setText(line);
+      return;
+    }
+    ranges.sort((a, b) => a[0] - b[0]);
+    let cursor = 0;
+    for (const [start, end] of ranges) {
+      if (start < cursor) continue; // skip overlaps
+      if (start > cursor) el.appendText(line.slice(cursor, start));
+      el.createSpan({ cls: "me-diff__word", text: line.slice(start, end) });
+      cursor = end;
+    }
+    if (cursor < line.length) el.appendText(line.slice(cursor));
+  }
+
+  onClose(): void {
+    this.contentEl.empty();
+  }
+}
+
+/** Save / load / delete query + operation presets. */
+export class PresetsModal extends Modal {
+  constructor(
+    app: App,
+    private plugin: MassEditorPlugin,
+    private current: () => { query: Group; ops: EditOp[] },
+    private onLoad: (preset: Preset) => void
+  ) {
+    super(app);
+  }
+
+  onOpen(): void {
+    this.render();
+  }
+
+  private render(): void {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("me-modal");
+    contentEl.createEl("h3", { text: "Presets" });
+
+    // Save current query + operations as a new preset.
+    const save = contentEl.createDiv({ cls: "me-preset-save" });
+    const nameInput = save.createEl("input", {
+      attr: { type: "text", placeholder: "New preset name…" },
+    });
+    const saveBtn = save.createEl("button", { cls: "mod-cta", text: "Save current" });
+    saveBtn.onclick = async () => {
+      const name = nameInput.value.trim();
+      if (name === "") {
+        new Notice("Enter a preset name.");
+        return;
+      }
+      const { query, ops } = this.current();
+      this.plugin.settings.presets.push({
+        id: uid("p"),
+        name,
+        query: clone(query),
+        ops: clone(ops),
+      });
+      await this.plugin.saveSettings();
+      nameInput.value = "";
+      this.render();
+    };
+
+    const presets = this.plugin.settings.presets;
+    if (presets.length === 0) {
+      contentEl.createDiv({ cls: "me-empty", text: "No presets yet." });
+      return;
+    }
+
+    const list = contentEl.createDiv({ cls: "me-preset-list" });
+    presets.forEach((p) => this.renderPreset(list, p));
+  }
+
+  private renderPreset(list: HTMLElement, preset: Preset): void {
+    const row = list.createDiv({ cls: "me-preset" });
+    const info = row.createDiv({ cls: "me-preset__info" });
+    info.createDiv({ cls: "me-preset__name", text: preset.name });
+    info.createDiv({
+      cls: "me-history__meta",
+      text: `${preset.ops.length} operation(s)`,
+    });
+
+    const load = row.createEl("button", { text: "Load" });
+    load.onclick = () => {
+      this.onLoad(preset);
+      this.close();
+    };
+
+    const del = row.createEl("div", { cls: "clickable-icon" });
+    setIcon(del, "trash-2");
+    del.setAttribute("aria-label", "Delete preset");
+    del.onclick = async () => {
+      const idx = this.plugin.settings.presets.findIndex((x) => x.id === preset.id);
+      if (idx >= 0) this.plugin.settings.presets.splice(idx, 1);
+      await this.plugin.saveSettings();
+      this.render();
+    };
   }
 
   onClose(): void {

@@ -1,6 +1,6 @@
 {
   "name": "mass-editor",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Obsidian plugin for mass search and edit across the vault.",
   "main": "main.js",
   "type": "module",

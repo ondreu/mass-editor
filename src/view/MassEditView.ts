@@ -16,7 +16,15 @@ import { hashString } from "../backup/backupManager";
 import { QueryBuilder, newGroup } from "../ui/QueryBuilder";
 import { ResultsList } from "../ui/ResultsList";
 import { OperationsPanel } from "../ui/OperationsPanel";
-import { ConfirmApplyModal, HistoryModal, ResultModal } from "../ui/modals";
+import {
+  ConfirmApplyModal,
+  HistoryModal,
+  PresetsModal,
+  PreviewModal,
+  type RegexSpec,
+  ResultModal,
+} from "../ui/modals";
+import type { Preset } from "../settings";
 import { SuggestSources } from "../ui/suggest";
 import { noteCount } from "../ui/dom";
 
@@ -83,13 +91,43 @@ export class MassEditView extends ItemView {
     bar.createDiv({ cls: "me-toolbar__title", text: "Mass Editor" });
     this.countEl = bar.createDiv({ cls: "me-toolbar__count" });
 
+    const presets = bar.createEl("div", { cls: "clickable-icon" });
+    setIcon(presets, "bookmark");
+    presets.setAttribute("aria-label", "Presets");
+    presets.onclick = () =>
+      new PresetsModal(
+        this.app,
+        this.plugin,
+        () => ({ query: this.query, ops: this.ops }),
+        (preset) => this.loadPreset(preset)
+      ).open();
+
     const hist = bar.createEl("div", { cls: "clickable-icon" });
     setIcon(hist, "history");
     hist.setAttribute("aria-label", "History & undo");
     hist.onclick = () =>
-      new HistoryModal(this.app, this.plugin.backup, () =>
+      new HistoryModal(this.app, this.plugin, () =>
         this.refreshApplyState()
       ).open();
+  }
+
+  /** Loads a saved preset (query + operations) and re-renders the whole view. */
+  private loadPreset(preset: Preset): void {
+    this.query = JSON.parse(JSON.stringify(preset.query)) as Group;
+    this.ops = JSON.parse(JSON.stringify(preset.ops)) as EditOp[];
+    this.results = [];
+    this.selected.clear();
+    void this.onOpen();
+  }
+
+  /** Current, valid body-regex operations — for the results match preview. */
+  private regexSpecs(): RegexSpec[] {
+    return this.ops
+      .filter(
+        (o): o is Extract<EditOp, { kind: "body-regex" }> =>
+          o.kind === "body-regex" && isOpValid(o)
+      )
+      .map((o) => ({ pattern: o.pattern, flags: o.flags }));
   }
 
   /** The Search action sits directly under the query, preserving top-down flow. */
@@ -155,8 +193,11 @@ export class MassEditView extends ItemView {
   }
 
   private mountResults(container: HTMLElement): void {
-    this.resultsList = new ResultsList(this.app, this.selected, () =>
-      this.refreshApplyState()
+    this.resultsList = new ResultsList(
+      this.app,
+      this.selected,
+      () => this.refreshApplyState(),
+      () => this.regexSpecs()
     );
     this.resultsList.mount(container);
   }
@@ -278,8 +319,12 @@ export class MassEditView extends ItemView {
     }
 
     if (this.plugin.settings.confirmBeforeApply) {
-      new ConfirmApplyModal(this.app, summary, () =>
-        void this.doApply(files)
+      new ConfirmApplyModal(
+        this.app,
+        summary,
+        () => void this.doApply(files),
+        () =>
+          new PreviewModal(this.app, this.plugin, files, ops, scope).open()
       ).open();
     } else {
       await this.doApply(files);
@@ -324,9 +369,13 @@ export class MassEditView extends ItemView {
         }
       }
 
-      await this.plugin.backup.finalizeRun(manifest, afterHashes);
+      const { unchanged } = await this.plugin.backup.finalizeRun(
+        manifest,
+        afterHashes
+      );
 
       const lines = [`Edited: ${okCount}`, `Failed: ${failCount}`];
+      if (unchanged > 0) lines.push(`Unchanged (not backed up): ${unchanged}`);
       if (totalReplacements > 0)
         lines.push(`Regex replacements: ${totalReplacements}`);
       lines.push(`Backup: run ${manifest.runId}`);

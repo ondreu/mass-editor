@@ -145,14 +145,35 @@ export class BackupManager {
     );
   }
 
-  /** Fills in hashAfter, saves the manifest, records history + retention. */
+  /**
+   * Fills in hashAfter, drops files that didn't actually change (deleting their
+   * now-useless backups), saves the manifest, records history + retention.
+   * Returns how many files were kept (changed) vs skipped (unchanged).
+   */
   async finalizeRun(
     manifest: RunManifest,
     afterHashes: Map<string, string>
-  ): Promise<void> {
+  ): Promise<{ changed: number; unchanged: number }> {
+    const kept: BackupFileEntry[] = [];
+    let unchanged = 0;
     for (const entry of manifest.files) {
       entry.hashAfter = afterHashes.get(entry.path) ?? entry.hashBefore;
+      if (entry.hashAfter === entry.hashBefore) {
+        // Nothing changed — the backup is dead weight, so remove it.
+        unchanged++;
+        try {
+          if (await this.adapter.exists(entry.backupPath)) {
+            await this.adapter.remove(entry.backupPath);
+          }
+        } catch {
+          /* best-effort */
+        }
+      } else {
+        kept.push(entry);
+      }
     }
+    manifest.files = kept;
+
     const root = this.backupRoot();
     const runDir = `${root}/${manifest.runId}`;
     await this.writeManifest(runDir, manifest);
@@ -166,6 +187,7 @@ export class BackupManager {
     });
     await this.persist();
     await this.pruneRetention();
+    return { changed: kept.length, unchanged };
   }
 
   async readManifest(record: RunRecord): Promise<RunManifest | null> {

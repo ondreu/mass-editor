@@ -547,7 +547,9 @@
 }
 .me-diff__marker {
   flex: 0 0 auto;
-  width: 12px;
+  min-width: 12px;
+  padding-right: 6px;
+  text-align: right;
   color: var(--text-faint);
   user-select: none;
 }
@@ -559,4 +561,132 @@
 }
 .me-diff__text {
   flex: 1 1 auto;
+}
+
+/* header + unified/split toggle */
+.me-diff__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.me-diff__header h3 {
+  margin: 0;
+}
+.me-diff__toggle {
+  margin-left: auto;
+  display: inline-flex;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  overflow: hidden;
+}
+.me-diff__toggle button {
+  padding: 1px 10px;
+  height: auto;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  box-shadow: none;
+  cursor: pointer;
+}
+.me-diff__toggle button.is-active {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+.me-diff__note {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  margin: 4px 0 8px;
+}
+.me-diff__note.is-warn {
+  color: var(--text-warning);
+}
+.me-diff__file {
+  margin-bottom: 14px;
+}
+
+/* word-level highlight of changed tokens within a line */
+.me-diff__word {
+  border-radius: 2px;
+  padding: 0 1px;
+}
+.me-diff__line.is-add .me-diff__word,
+.me-diff__cell.is-add .me-diff__word {
+  background: var(--text-success, var(--color-green));
+  color: var(--text-on-accent, #fff);
+}
+.me-diff__line.is-del .me-diff__word,
+.me-diff__cell.is-del .me-diff__word {
+  background: var(--text-error);
+  color: var(--text-on-accent, #fff);
+}
+
+/* side-by-side layout */
+.me-diff.is-split .me-diff__srow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+.me-diff.is-split .me-diff__cell {
+  white-space: pre;
+  overflow-x: auto;
+  padding: 0 8px;
+  border-left: 1px solid var(--background-modifier-border);
+}
+.me-diff.is-split .me-diff__cell.is-left {
+  border-left: none;
+}
+.me-diff.is-split .me-diff__cell.is-add {
+  background: var(--background-modifier-success, rgba(76, 175, 80, 0.15));
+}
+.me-diff.is-split .me-diff__cell.is-del {
+  background: var(--background-modifier-error, rgba(244, 67, 54, 0.15));
+}
+.me-diff.is-split .me-diff__cell.is-empty {
+  background: var(--background-secondary);
+}
+
+/* ---- presets ---- */
+.me-preset-save {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.me-preset-save input {
+  flex: 1;
+}
+.me-preset-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.me-preset {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius-s);
+  background: var(--background-secondary);
+}
+.me-preset__info {
+  flex: 1;
+  min-width: 0;
+}
+.me-preset__name {
+  font-weight: var(--font-semibold);
+}
+
+/* results: regex match preview icon */
+.me-result__peek {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  opacity: 0;
+}
+.me-result:hover .me-result__peek {
+  opacity: 1;
+}
+.me-result__peek .svg-icon {
+  width: 15px;
+  height: 15px;
 }

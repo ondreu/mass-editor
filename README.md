@@ -11,9 +11,12 @@ The UI inherits your active Obsidian theme.
 - **Fields:** tag, frontmatter (per key), body, name, path, location (folder + recursion), created/modified dates.
 - **Edit operations:** frontmatter set / add / delete / append-to-list, tag add / remove, body append / prepend, regex find & replace (capture groups `$1`).
 - **Result selection** via checkboxes (all selected by default), with a live count.
-- **Impact summary** before applying (note count, per-operation breakdown, regex match count + warnings).
-- **Backup + undo:** each run is a single transaction; restore from backup with drift detection.
-- **Git-style diff:** inspect exactly what an edit changed in any note — a line-by-line comparison (backup *before* vs current *after*) from the history panel.
+- **Regex match preview:** peek at the lines a regex operation will hit in any result (with the matches highlighted) before you run it.
+- **Impact summary + change preview** before applying: a per-operation breakdown, plus an optional dry-run diff of the body transformation on a sample of the selected notes — nothing is written.
+- **Backup + undo:** each run is a single transaction; restore from backup with drift detection. Only files that actually changed are backed up.
+- **Git-style diff:** inspect exactly what an edit changed in any note — a line-by-line comparison (backup *before* vs current *after*), unified or side-by-side, with word-level highlighting.
+- **Export report:** save a run as a Markdown note with a unified diff per file.
+- **Presets:** save and reload a query + operations combination.
 - **Layout:** single pane on desktop, two tabs on mobile.
 
 ## Install via BRAT
@@ -36,10 +39,11 @@ Operation order is fixed and deterministic: **frontmatter → tags → regex →
 
 ## Backups and undo
 
-- Each edit run first backs up the affected files and writes a `manifest.json`.
+- Each edit run backs up the affected files (only those that actually changed) and writes a `manifest.json`.
 - History and *Undo* are behind the history icon in the toolbar.
 - Undo restores files from the backup. If a file was manually changed in the meantime (drift), the plugin warns and offers *skip / overwrite*.
-- **View changes:** expand a run and click the compare icon (⎇) next to a file for a git-style, line-by-line diff of the backup against the note's current content. Additions are green, deletions red; unchanged runs are collapsed into hunks with surrounding context.
+- **View changes:** expand a run and click the compare icon next to a file for a git-style diff of the backup against the note's current content. Toggle **unified / side-by-side**; changed words within a line are highlighted; unchanged runs collapse into hunks with surrounding context.
+- **Export report:** the download icon on a run writes a Markdown note (in the report folder) containing the run metadata and a fenced unified diff per file.
 
 > **Backup location tradeoff:** the default backup folder is inside the plugin folder (`.obsidian/plugins/mass-editor/backups/`). That folder **may not sync** and **reinstalling the plugin can delete it**. For durable backups, set a path **inside your vault** (`backupFolder`) in Settings.
 
@@ -52,6 +56,8 @@ Operation order is fixed and deterministic: **frontmatter → tags → regex →
 | Confirm before apply | on | Confirmation dialog |
 | Select all results by default | on | New results start selected |
 | Regex scope | body only | `body` (safe) / `whole file` (YAML risk) |
+| Report folder | Mass Editor Reports | Vault folder for exported run reports |
+| Side-by-side diff by default | off | Two-column diff layout instead of unified |
 | Live count debounce | 200 ms | Recompute delay |
 
 ## Development
@@ -63,7 +69,7 @@ npm run build    # typecheck + production bundle
 npm test         # unit tests (engine, operators, op ordering)
 ```
 
-Key modules: `src/query` (types, operators, evaluator, engine), `src/edit` (operations, applier, summary, diff), `src/backup` (backups + undo), `src/ui` (DOM components), `src/view` (main view).
+Key modules: `src/query` (types, operators, evaluator, engine), `src/edit` (operations, applier, summary, diff, report), `src/backup` (backups + undo), `src/ui` (DOM components incl. shared diff renderer), `src/view` (main view).
 
 Implementation safety: frontmatter/tags are edited exclusively through `app.fileManager.processFrontMatter`, and bodies through `app.vault.process` (atomic). No manual YAML parsing.
 
