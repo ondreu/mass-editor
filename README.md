@@ -4,6 +4,8 @@ An Obsidian plugin for **mass search and editing** of notes across your vault. B
 
 The UI inherits your active Obsidian theme.
 
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/B7K822EW68)
+
 ## Features
 
 - **Visual query builder** with nested AND/OR groups and NOT.
