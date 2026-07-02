@@ -10,6 +10,11 @@ import {
 import type { Group, Rule } from "../src/query/types";
 import { orderOps, coerceValue } from "../src/edit/operations";
 import type { EditOp } from "../src/edit/operations";
+import { transformBody } from "../src/edit/applier";
+
+// Minimal fakes: no frontmatter cache → frontmatter offset is 0.
+const fakeApp = { metadataCache: { getFileCache: () => null } } as never;
+const fakeFile = {} as never;
 
 function ctx(over: Partial<EvalContext> = {}): EvalContext {
   return {
@@ -180,6 +185,41 @@ test("orderOps: fm → tag → regex → append/prepend", () => {
   ];
   const kinds = orderOps(ops).map((o) => o.kind);
   assert.deepEqual(kinds, ["fm-set", "tag-add", "body-regex", "body-append"]);
+});
+
+// ---------- body transform (dry-run / apply core) ----------
+
+test("transformBody: append adds a trailing line", () => {
+  const c = { n: 0 };
+  const out = transformBody(fakeApp, fakeFile, "hello", [
+    { kind: "body-append", text: "X" },
+  ], "body", c);
+  assert.equal(out, "hello\nX\n");
+});
+
+test("transformBody: prepend inserts before body (no frontmatter)", () => {
+  const c = { n: 0 };
+  const out = transformBody(fakeApp, fakeFile, "hello", [
+    { kind: "body-prepend", text: "X" },
+  ], "body", c);
+  assert.equal(out, "X\nhello");
+});
+
+test("transformBody: regex replaces and counts matches", () => {
+  const c = { n: 0 };
+  const out = transformBody(fakeApp, fakeFile, "foo foo bar", [
+    { kind: "body-regex", pattern: "foo", flags: "g", replacement: "baz" },
+  ], "whole", c);
+  assert.equal(out, "baz baz bar");
+  assert.equal(c.n, 2);
+});
+
+test("transformBody: invalid regex throws (caught by preflight)", () => {
+  assert.throws(() =>
+    transformBody(fakeApp, fakeFile, "x", [
+      { kind: "body-regex", pattern: "(", flags: "", replacement: "" },
+    ], "whole", { n: 0 })
+  );
 });
 
 test("coerceValue: types", () => {

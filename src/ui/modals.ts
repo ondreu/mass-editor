@@ -1,4 +1,4 @@
-import { type App, Modal } from "obsidian";
+import { type App, Modal, setIcon } from "obsidian";
 import type { ImpactSummary } from "../edit/summary";
 import type {
   BackupManager,
@@ -82,8 +82,12 @@ export class HistoryModal extends Modal {
   }
 
   private renderRun(list: HTMLElement, rec: RunRecord): void {
-    const row = list.createDiv({ cls: "me-history__row" });
+    const wrap = list.createDiv({ cls: "me-history__item" });
+    const row = wrap.createDiv({ cls: "me-history__row" });
     if (rec.undone) row.addClass("is-undone");
+
+    const expand = row.createDiv({ cls: "clickable-icon" });
+    setIcon(expand, "chevron-right");
 
     const info = row.createDiv({ cls: "me-history__info" });
     info.createDiv({ text: new Date(rec.timestamp).toLocaleString() });
@@ -96,28 +100,92 @@ export class HistoryModal extends Modal {
 
     const undo = row.createEl("button", {
       cls: "mod-warning",
-      text: rec.undone ? "Reverted" : "Undo",
+      text: rec.undone ? "Reverted" : "Undo all",
     });
     undo.disabled = !!rec.undone;
-    undo.onclick = async () => {
-      const plan = await this.backup.planUndo(rec);
-      if (!plan) {
-        row.createDiv({ cls: "me-op__error", text: "Backup not found." });
+    undo.onclick = () => void this.doUndo(rec);
+
+    // Expandable per-file panel for partial undo.
+    const panel = wrap.createDiv({ cls: "me-history__files" });
+    panel.hide();
+    let loaded = false;
+    expand.onclick = async () => {
+      const open = panel.isShown();
+      if (open) {
+        panel.hide();
+        setIcon(expand, "chevron-right");
         return;
       }
-      const drifted = plan.entries.filter((e) => e.drifted).length;
-      if (drifted > 0) {
-        new UndoDriftModal(this.app, plan, (overwrite) =>
-          void this.doUndo(rec, overwrite)
-        ).open();
-      } else {
-        await this.doUndo(rec, false);
+      panel.show();
+      setIcon(expand, "chevron-down");
+      if (!loaded) {
+        loaded = true;
+        await this.renderFilePanel(panel, rec);
       }
     };
   }
 
-  private async doUndo(rec: RunRecord, overwrite: boolean): Promise<void> {
-    const res = await this.backup.undoRun(rec, overwrite);
+  private async renderFilePanel(
+    panel: HTMLElement,
+    rec: RunRecord
+  ): Promise<void> {
+    panel.empty();
+    const plan = await this.backup.planUndo(rec);
+    if (!plan) {
+      panel.createDiv({ cls: "me-op__error", text: "Backup not found." });
+      return;
+    }
+    const chosen = new Set<string>(plan.entries.map((e) => e.path));
+    for (const entry of plan.entries) {
+      const r = panel.createEl("label", { cls: "me-history__file" });
+      const cb = r.createEl("input", { attr: { type: "checkbox" } });
+      cb.checked = true;
+      cb.onchange = () => {
+        if (cb.checked) chosen.add(entry.path);
+        else chosen.delete(entry.path);
+      };
+      r.createSpan({ cls: "me-history__file-path", text: entry.path });
+      if (entry.drifted)
+        r.createSpan({ cls: "me-history__drift", text: "changed" });
+    }
+    const actions = panel.createDiv({ cls: "me-history__file-actions" });
+    const btn = actions.createEl("button", {
+      cls: "mod-warning",
+      text: "Undo selected",
+    });
+    btn.onclick = () => {
+      if (chosen.size === 0) return;
+      void this.doUndo(rec, new Set(chosen));
+    };
+  }
+
+  private async doUndo(rec: RunRecord, paths?: Set<string>): Promise<void> {
+    const plan = await this.backup.planUndo(rec);
+    if (!plan) {
+      new ResultModal(this.app, "Undo", ["Error: backup not found."]).open();
+      return;
+    }
+    const relevant = paths
+      ? plan.entries.filter((e) => paths.has(e.path))
+      : plan.entries;
+    const drifted = relevant.filter((e) => e.drifted).length;
+    if (drifted > 0) {
+      new UndoDriftModal(
+        this.app,
+        { runId: plan.runId, entries: relevant },
+        (overwrite) => void this.runUndo(rec, overwrite, paths)
+      ).open();
+    } else {
+      await this.runUndo(rec, false, paths);
+    }
+  }
+
+  private async runUndo(
+    rec: RunRecord,
+    overwrite: boolean,
+    paths?: Set<string>
+  ): Promise<void> {
+    const res = await this.backup.undoRun(rec, overwrite, paths);
     this.onAfterUndo();
     new ResultModal(this.app, "Undo complete", [
       `Restored: ${res.restored}`,

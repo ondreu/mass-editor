@@ -10,13 +10,14 @@ import type MassEditorPlugin from "../main";
 import type { Group } from "../query/types";
 import { estimatePhase1, search } from "../query/engine";
 import { type EditOp, isOpValid } from "../edit/operations";
-import { applyToFile } from "../edit/applier";
+import { applyToFile, preflight } from "../edit/applier";
 import { buildSummary } from "../edit/summary";
 import { hashString } from "../backup/backupManager";
 import { QueryBuilder, newGroup } from "../ui/QueryBuilder";
 import { ResultsList } from "../ui/ResultsList";
 import { OperationsPanel } from "../ui/OperationsPanel";
 import { ConfirmApplyModal, HistoryModal, ResultModal } from "../ui/modals";
+import { SuggestSources } from "../ui/suggest";
 import { noteCount } from "../ui/dom";
 
 export const VIEW_TYPE_MASS_EDIT = "mass-editor-view";
@@ -30,6 +31,7 @@ export class MassEditView extends ItemView {
   private builder!: QueryBuilder;
   private resultsList!: ResultsList;
   private opsPanel!: OperationsPanel;
+  private sources!: SuggestSources;
 
   private countEl!: HTMLElement;
   private searchBtn!: HTMLButtonElement;
@@ -58,6 +60,7 @@ export class MassEditView extends ItemView {
     const root = this.contentEl;
     root.empty();
     root.addClass("mass-editor");
+    this.sources = new SuggestSources(this.app);
 
     this.renderToolbar(root);
 
@@ -87,11 +90,12 @@ export class MassEditView extends ItemView {
       new HistoryModal(this.app, this.plugin.backup, () =>
         this.refreshApplyState()
       ).open();
+  }
 
-    this.searchBtn = bar.createEl("button", {
-      cls: "mod-cta",
-      text: "Search",
-    });
+  /** The Search action sits directly under the query, preserving top-down flow. */
+  private renderSearchBar(parent: HTMLElement): void {
+    const bar = parent.createDiv({ cls: "me-searchbar" });
+    this.searchBtn = bar.createEl("button", { cls: "mod-cta", text: "Search" });
     this.searchBtn.onclick = () => void this.runSearch();
   }
 
@@ -104,6 +108,7 @@ export class MassEditView extends ItemView {
 
   private renderDesktop(root: HTMLElement): void {
     this.mountBuilder(this.section(root, "Query"));
+    this.renderSearchBar(root);
     this.mountResults(this.section(root, "Results"));
     this.mountOps(this.section(root, "Operations"));
     this.mountApplyBar(root);
@@ -121,6 +126,7 @@ export class MassEditView extends ItemView {
     const panel2 = root.createDiv({ cls: "me-panel" });
 
     this.mountBuilder(this.section(panel1, "Query"));
+    this.renderSearchBar(panel1);
     this.mountResults(this.section(panel1, "Results"));
     this.mountOps(this.section(panel2, "Operations"));
     this.mountApplyBar(panel2);
@@ -140,6 +146,8 @@ export class MassEditView extends ItemView {
   private mountBuilder(container: HTMLElement): void {
     this.builder = new QueryBuilder(
       this.query,
+      this.app,
+      this.sources,
       () => this.scheduleCount(),
       () => this.scheduleCount()
     );
@@ -147,14 +155,16 @@ export class MassEditView extends ItemView {
   }
 
   private mountResults(container: HTMLElement): void {
-    this.resultsList = new ResultsList(this.selected, () =>
+    this.resultsList = new ResultsList(this.app, this.selected, () =>
       this.refreshApplyState()
     );
     this.resultsList.mount(container);
   }
 
   private mountOps(container: HTMLElement): void {
-    this.opsPanel = new OperationsPanel(this.ops, () => this.refreshApplyState());
+    this.opsPanel = new OperationsPanel(this.ops, this.app, this.sources, () =>
+      this.refreshApplyState()
+    );
     this.opsPanel.mount(container);
   }
 
@@ -189,6 +199,7 @@ export class MassEditView extends ItemView {
   private async runSearch(): Promise<void> {
     this.searchAbort?.abort();
     this.searchAbort = new AbortController();
+    this.sources.invalidate(); // refresh autocomplete against current vault
     this.searchBtn.disabled = true;
     this.searchBtn.setText("Searching…");
     try {
@@ -250,12 +261,21 @@ export class MassEditView extends ItemView {
   private async startApply(): Promise<void> {
     if (!this.canApply().ok) return;
     const files = this.selectedFiles();
-    const summary = await buildSummary(
-      this.app,
-      files,
-      this.validOps(),
-      this.plugin.settings.regexScope
-    );
+    const ops = this.validOps();
+    const scope = this.plugin.settings.regexScope;
+    const summary = await buildSummary(this.app, files, ops, scope);
+
+    // Pre-flight: dry-run the operations to catch failures before writing.
+    const failures = await preflight(this.app, files, ops, scope);
+    if (failures.length > 0) {
+      summary.lines.unshift({
+        text: `${failures.length} file(s) would fail and will be skipped:`,
+        tone: "warn",
+      });
+      failures.slice(0, 10).forEach((f) =>
+        summary.lines.push({ text: `${f.path}: ${f.error}`, tone: "warn" })
+      );
+    }
 
     if (this.plugin.settings.confirmBeforeApply) {
       new ConfirmApplyModal(this.app, summary, () =>

@@ -204,11 +204,13 @@ export class BackupManager {
 
   /**
    * Performs undo. `overwriteDrifted` = also overwrite files that drifted.
-   * Without it, drifted files are skipped.
+   * Without it, drifted files are skipped. `paths` limits the undo to a
+   * subset of files (undefined = all files in the run).
    */
   async undoRun(
     record: RunRecord,
-    overwriteDrifted: boolean
+    overwriteDrifted: boolean,
+    paths?: Set<string>
   ): Promise<UndoResult> {
     const manifest = await this.readManifest(record);
     const result: UndoResult = { restored: 0, skipped: 0, errors: [] };
@@ -217,7 +219,10 @@ export class BackupManager {
       return result;
     }
 
-    for (const entry of manifest.files) {
+    const targets = paths
+      ? manifest.files.filter((e) => paths.has(e.path))
+      : manifest.files;
+    for (const entry of targets) {
       try {
         if (!(await this.adapter.exists(entry.backupPath))) {
           result.errors.push(`Missing backup: ${entry.path}`);
@@ -249,8 +254,11 @@ export class BackupManager {
       }
     }
 
-    const rec = this.history.find((r) => r.runId === record.runId);
-    if (rec) rec.undone = true;
+    // Mark the whole run as reverted only for a full undo.
+    if (!paths) {
+      const rec = this.history.find((r) => r.runId === record.runId);
+      if (rec) rec.undone = true;
+    }
     await this.persist();
     return result;
   }

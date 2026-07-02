@@ -1,4 +1,4 @@
-import { setIcon } from "obsidian";
+import { type App, setIcon } from "obsidian";
 import {
   type FieldType,
   type Group,
@@ -12,6 +12,7 @@ import {
   defaultOpFor,
   inputTypeFor,
 } from "../query/operators";
+import { ListSuggest, type SuggestSources } from "./suggest";
 import { uid } from "./dom";
 
 const FIELD_LABELS: Record<FieldType, string> = {
@@ -54,6 +55,8 @@ export class QueryBuilder {
 
   constructor(
     private root: Group,
+    private app: App,
+    private sources: SuggestSources,
     private onStructure: () => void,
     private onValue: () => void
   ) {}
@@ -179,6 +182,15 @@ export class QueryBuilder {
         rule.key = keyInput.value;
         this.onValue();
       };
+      new ListSuggest(
+        this.app,
+        keyInput,
+        () => this.sources.frontmatterKeys(),
+        (v) => {
+          rule.key = v;
+          this.onValue();
+        }
+      );
     }
 
     const opSel = row.createEl("select", { cls: "dropdown" });
@@ -226,15 +238,27 @@ export class QueryBuilder {
           rule.value = el.value;
           this.onValue();
         };
-        if (input === "folder") {
-          const sub = row.createEl("label", { cls: "me-subfolders" });
-          const cb = sub.createEl("input", { attr: { type: "checkbox" } });
-          cb.checked = rule.flag !== false;
-          cb.onchange = () => {
-            rule.flag = cb.checked;
-            this.onValue();
-          };
-          sub.createSpan({ text: "subfolders" });
+        if (rule.field === "tag") {
+          new ListSuggest(
+            this.app,
+            el,
+            () => this.sources.tags(),
+            (v) => {
+              rule.value = v;
+              this.onValue();
+            }
+          );
+        } else if (input === "folder") {
+          new ListSuggest(
+            this.app,
+            el,
+            () => this.sources.folders(),
+            (v) => {
+              rule.value = v;
+              this.onValue();
+            }
+          );
+          this.subfolderToggle(row, rule);
         }
         return;
       }
@@ -286,6 +310,26 @@ export class QueryBuilder {
     setIcon(ic, icon);
     btn.createSpan({ text: label });
     btn.onclick = onClick;
+  }
+
+  /** Clearly-stated on/off toggle for "include subfolders". */
+  private subfolderToggle(row: HTMLElement, rule: Rule): void {
+    const on = () => rule.flag !== false;
+    const btn = row.createEl("button", { cls: "me-toggle" });
+    const sync = () => {
+      btn.toggleClass("is-active", on());
+      btn.empty();
+      const ic = btn.createSpan({ cls: "me-toggle__icon" });
+      setIcon(ic, on() ? "check" : "minus");
+      btn.createSpan({ text: on() ? "incl. subfolders" : "this folder only" });
+      btn.setAttribute("aria-label", "Toggle including subfolders");
+    };
+    sync();
+    btn.onclick = () => {
+      rule.flag = !on();
+      sync();
+      this.onValue();
+    };
   }
 
   private iconButton(

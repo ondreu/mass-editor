@@ -89,6 +89,41 @@ async function applyFrontmatterOps(
   });
 }
 
+/** Builds the pure body transform; throws on invalid regex. Counts replacements. */
+export function transformBody(
+  app: App,
+  file: TFile,
+  content: string,
+  ops: EditOp[],
+  scope: RegexScope,
+  counter: { n: number }
+): string {
+  let out = content;
+  for (const op of ops) {
+    if (op.kind === "body-regex") {
+      const re = safeRegex(op.pattern, op.flags);
+      if (!re) throw new Error(`Invalid regex: /${op.pattern}/${op.flags}`);
+      const fmEnd = scope === "body" ? frontmatterEnd(app, file, out) : 0;
+      const head = out.slice(0, fmEnd);
+      const target = out.slice(fmEnd);
+      const countRe = safeRegex(op.pattern, ensureGlobal(op.flags));
+      const matches = countRe ? target.match(countRe) : null;
+      const total = matches ? matches.length : 0;
+      counter.n += op.flags.includes("g") ? total : Math.min(1, total);
+      out = head + target.replace(re, op.replacement);
+    } else if (op.kind === "body-append") {
+      const sep = out.endsWith("\n") || out === "" ? "" : "\n";
+      out = out + sep + op.text + "\n";
+    } else if (op.kind === "body-prepend") {
+      const fmEnd = frontmatterEnd(app, file, out);
+      const head = out.slice(0, fmEnd);
+      const rest = out.slice(fmEnd);
+      out = head + op.text + "\n" + rest;
+    }
+  }
+  return out;
+}
+
 /** Applies body operations (regex/append/prepend) via the atomic API. */
 async function applyBodyOps(
   app: App,
@@ -96,34 +131,9 @@ async function applyBodyOps(
   ops: EditOp[],
   scope: RegexScope
 ): Promise<number> {
-  let replacements = 0;
-
-  const transform = (content: string): string => {
-    let out = content;
-    for (const op of ops) {
-      if (op.kind === "body-regex") {
-        const re = safeRegex(op.pattern, op.flags);
-        if (!re) throw new Error(`Invalid regex: /${op.pattern}/${op.flags}`);
-        const fmEnd = scope === "body" ? frontmatterEnd(app, file, out) : 0;
-        const head = out.slice(0, fmEnd);
-        const target = out.slice(fmEnd);
-        const countRe = safeRegex(op.pattern, ensureGlobal(op.flags));
-        const matches = countRe ? target.match(countRe) : null;
-        const total = matches ? matches.length : 0;
-        replacements += op.flags.includes("g") ? total : Math.min(1, total);
-        out = head + target.replace(re, op.replacement);
-      } else if (op.kind === "body-append") {
-        const sep = out.endsWith("\n") || out === "" ? "" : "\n";
-        out = out + sep + op.text + "\n";
-      } else if (op.kind === "body-prepend") {
-        const fmEnd = frontmatterEnd(app, file, out);
-        const head = out.slice(0, fmEnd);
-        const rest = out.slice(fmEnd);
-        out = head + op.text + "\n" + rest;
-      }
-    }
-    return out;
-  };
+  const counter = { n: 0 };
+  const transform = (content: string): string =>
+    transformBody(app, file, content, ops, scope, counter);
 
   const vaultAny = app.vault as unknown as {
     process?: (f: TFile, fn: (c: string) => string) => Promise<string>;
@@ -134,7 +144,35 @@ async function applyBodyOps(
     const content = await app.vault.read(file);
     await app.vault.modify(file, transform(content));
   }
-  return replacements;
+  return counter.n;
+}
+
+/**
+ * Dry-run pre-flight: simulate all operations without writing, to catch
+ * failures (e.g. invalid/failing regex) before touching any file.
+ * Returns the files that would fail with their error messages.
+ */
+export async function preflight(
+  app: App,
+  files: TFile[],
+  ops: EditOp[],
+  scope: RegexScope
+): Promise<{ path: string; error: string }[]> {
+  const bodyOps = orderOps(ops).filter((o) => !FM_KINDS.has(o.kind));
+  if (bodyOps.length === 0) return [];
+  const failures: { path: string; error: string }[] = [];
+  for (const file of files) {
+    try {
+      const content = await app.vault.cachedRead(file);
+      transformBody(app, file, content, bodyOps, scope, { n: 0 });
+    } catch (e) {
+      failures.push({
+        path: file.path,
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
+  }
+  return failures;
 }
 
 function safeRegex(pattern: string, flags: string): RegExp | null {
