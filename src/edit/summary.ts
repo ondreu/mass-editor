@@ -22,29 +22,29 @@ function describeOp(op: EditOp, n: number): string {
   const times = `${n}×`;
   switch (op.kind) {
     case "fm-set":
-      return `${times} nastavit \`${op.key}\` = ${op.value}`;
+      return `${times} set \`${op.key}\` = ${op.value}`;
     case "fm-add":
-      return `${times} přidat \`${op.key}\` (jen kde chybí)`;
+      return `${times} add \`${op.key}\` (only where missing)`;
     case "fm-delete":
-      return `${times} smazat klíč \`${op.key}\``;
+      return `${times} delete key \`${op.key}\``;
     case "fm-list-append":
-      return `${times} přidat "${op.value}" do listu \`${op.key}\``;
+      return `${times} append "${op.value}" to list \`${op.key}\``;
     case "tag-add":
-      return `${times} přidat tag #${op.tag.replace(/^#/, "")}`;
+      return `${times} add tag #${op.tag.replace(/^#/, "")}`;
     case "tag-remove":
-      return `${times} odebrat tag #${op.tag.replace(/^#/, "")}`;
+      return `${times} remove tag #${op.tag.replace(/^#/, "")}`;
     case "body-append":
-      return `${times} připojit text na konec`;
+      return `${times} append text to end`;
     case "body-prepend":
-      return `${times} vložit text na začátek těla`;
+      return `${times} prepend text to body`;
     case "body-regex":
       return "";
   }
 }
 
 /**
- * Spočítá dopad operací na vybrané soubory.
- * Pro regex operace čte těla (dry-run) a počítá skutečné shody + varování.
+ * Computes the impact of the operations on the selected files.
+ * For regex operations it reads bodies (dry-run) and counts real matches + warnings.
  */
 export async function buildSummary(
   app: App,
@@ -59,7 +59,7 @@ export async function buildSummary(
       const re = safeRegex(op.pattern, ensureGlobal(op.flags));
       if (!re) {
         lines.push({
-          text: `Regex /${op.pattern}/ je neplatný.`,
+          text: `Regex /${op.pattern}/ is invalid.`,
           tone: "warn",
         });
         continue;
@@ -77,15 +77,15 @@ export async function buildSummary(
         }
       }
       const line: SummaryLine = {
-        text: `${totalMatches} regex nahrazení v ${filesWithMatch} souborech`,
+        text: `${totalMatches} regex replacements in ${filesWithMatch} files`,
         tone: "normal",
       };
       if (totalMatches === 0) {
         line.tone = "warn";
-        line.text += " — žádná shoda, zkontrolujte vzor";
+        line.text += " — no matches, check the pattern";
       } else if (totalMatches > files.length * 50) {
         line.tone = "warn";
-        line.text += " — velmi mnoho shod, ověřte vzor";
+        line.text += " — very many matches, verify the pattern";
       }
       lines.push(line);
     } else {

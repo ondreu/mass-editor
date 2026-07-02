@@ -1,14 +1,12 @@
 let counter = 0;
 
-/** Krátké unikátní id pro uzly dotazu / operace. */
+/** Short unique id for query / operation nodes. */
 export function uid(prefix = "n"): string {
   counter += 1;
   return `${prefix}${Date.now().toString(36)}${counter.toString(36)}`;
 }
 
-/** Formátuje počet poznámek s českým skloňováním. */
+/** Formats a note count in English. */
 export function noteCount(n: number): string {
-  if (n === 1) return "1 poznámka";
-  if (n >= 2 && n <= 4) return `${n} poznámky`;
-  return `${n} poznámek`;
+  return n === 1 ? "1 note" : `${n} notes`;
 }

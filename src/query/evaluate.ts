@@ -8,7 +8,7 @@ import {
 } from "./types";
 import { type EvalContext, evalRule } from "./operators";
 
-// ---------- Kleene (tří-hodnotová) logika ----------
+// ---------- Kleene (three-valued) logic ----------
 
 export function andTri(values: Tri[]): Tri {
   if (values.some((v) => v === false)) return false;
@@ -27,11 +27,11 @@ export function notTri(v: Tri): Tri {
   return !v;
 }
 
-// ---------- vyhodnocení stromu ----------
+// ---------- tree evaluation ----------
 
 export function evalGroup(group: Group, ctx: EvalContext): Tri {
   if (group.children.length === 0) {
-    // prázdná skupina = neutrální (vše projde)
+    // empty group = neutral (everything passes)
     return true;
   }
   const results = group.children.map((child) => evalNode(child, ctx));
@@ -43,7 +43,7 @@ function evalNode(node: Node, ctx: EvalContext): Tri {
   return isGroup(node) ? evalGroup(node, ctx) : evalRule(node as Rule, ctx);
 }
 
-/** True, pokud query obsahuje alespoň jedno obsahové (body) pravidlo. */
+/** True if the query contains at least one content (body) rule. */
 export function queryTouchesBody(node: Node): boolean {
   if (isGroup(node)) return node.children.some(queryTouchesBody);
   return isContentField((node as Rule).field);

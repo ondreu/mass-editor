@@ -30,20 +30,20 @@ export default class MassEditorPlugin extends Plugin {
       (leaf) => new MassEditView(leaf, this)
     );
 
-    this.addRibbonIcon("replace", "Mass Editor: otevřít", () =>
+    this.addRibbonIcon("replace", "Mass Editor: open", () =>
       this.activateView()
     );
 
     this.addCommand({
       id: "open-mass-editor",
-      name: "Otevřít",
+      name: "Open",
       callback: () => this.activateView(),
     });
 
     this.addSettingTab(new MassEditSettingTab(this.app, this));
   }
 
-  /** Otevře view v hlavním leaf (ne v sidebaru). */
+  /** Opens the view in a main leaf (not the sidebar). */
   async activateView(): Promise<void> {
     const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_MASS_EDIT);
     if (existing.length > 0) {
@@ -58,7 +58,7 @@ export default class MassEditorPlugin extends Plugin {
   async loadSettings(): Promise<void> {
     const data = await this.loadData();
     this.settings = Object.assign({}, DEFAULT_SETTINGS, data);
-    // history musí být pole
+    // history must be an array
     if (!Array.isArray(this.settings.history)) this.settings.history = [];
   }
 

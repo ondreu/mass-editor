@@ -34,7 +34,7 @@ export class MassEditView extends ItemView {
   private countEl!: HTMLElement;
   private searchBtn!: HTMLButtonElement;
   private applyBtn!: HTMLButtonElement;
-  private summaryEl!: HTMLElement;
+  private applyNote!: HTMLElement;
   private countTimer: number | null = null;
   private searchAbort: AbortController | null = null;
 
@@ -58,13 +58,13 @@ export class MassEditView extends ItemView {
     const root = this.contentEl;
     root.empty();
     root.addClass("mass-editor");
-    if (Platform.isMobile) root.addClass("is-mobile");
 
-    this.renderHeader(root);
+    this.renderToolbar(root);
 
     if (Platform.isMobile) this.renderMobile(root);
     else this.renderDesktop(root);
 
+    this.refreshApplyState();
     this.scheduleCount();
   }
 
@@ -75,72 +75,64 @@ export class MassEditView extends ItemView {
 
   // ---------- layout ----------
 
-  private renderHeader(root: HTMLElement): void {
-    const header = root.createDiv({ cls: "me-header" });
-    header.createDiv({ cls: "me-header__title", text: "Mass Editor" });
-    this.countEl = header.createDiv({ cls: "me-header__count" });
+  private renderToolbar(root: HTMLElement): void {
+    const bar = root.createDiv({ cls: "me-toolbar" });
+    bar.createDiv({ cls: "me-toolbar__title", text: "Mass Editor" });
+    this.countEl = bar.createDiv({ cls: "me-toolbar__count" });
 
-    const actions = header.createDiv({ cls: "me-header__actions" });
-    const hist = actions.createEl("button", { cls: "me-icon-btn" });
+    const hist = bar.createEl("div", { cls: "clickable-icon" });
     setIcon(hist, "history");
-    hist.setAttribute("aria-label", "Historie & undo");
+    hist.setAttribute("aria-label", "History & undo");
     hist.onclick = () =>
-      new HistoryModal(this.app, this.plugin.backup, () => {
-        this.app.workspace.trigger("mass-editor:refresh");
-      }).open();
+      new HistoryModal(this.app, this.plugin.backup, () =>
+        this.refreshApplyState()
+      ).open();
 
-    this.searchBtn = actions.createEl("button", {
-      cls: "me-btn me-btn--primary",
-      text: "Hledat",
+    this.searchBtn = bar.createEl("button", {
+      cls: "mod-cta",
+      text: "Search",
     });
     this.searchBtn.onclick = () => void this.runSearch();
   }
 
   private section(parent: HTMLElement, title: string): HTMLElement {
     const sec = parent.createDiv({ cls: "me-section" });
-    sec.createDiv({ cls: "me-section__title", text: title });
+    const head = sec.createDiv({ cls: "me-section__head" });
+    head.createDiv({ cls: "me-section__title", text: title });
     return sec.createDiv({ cls: "me-section__body" });
   }
 
   private renderDesktop(root: HTMLElement): void {
-    const wrap = root.createDiv({ cls: "me-body me-body--desktop" });
-    const querySec = this.section(wrap, "Dotaz");
-    this.mountBuilder(querySec);
-    const resultsSec = this.section(wrap, "Výsledky");
-    this.mountResults(resultsSec);
-    const opsSec = this.section(wrap, "Editační operace");
-    this.mountOps(opsSec);
-    this.mountApplyBar(opsSec);
+    this.mountBuilder(this.section(root, "Query"));
+    this.mountResults(this.section(root, "Results"));
+    this.mountOps(this.section(root, "Operations"));
+    this.mountApplyBar(root);
   }
 
   private renderMobile(root: HTMLElement): void {
     const tabs = root.createDiv({ cls: "me-tabs" });
-    const tab1Btn = tabs.createEl("button", {
-      cls: "me-tab is-active",
-      text: "Filtr & výsledky",
+    const tab1 = tabs.createEl("button", {
+      cls: "is-active",
+      text: "Filter & results",
     });
-    const tab2Btn = tabs.createEl("button", {
-      cls: "me-tab",
-      text: "Editace",
-    });
+    const tab2 = tabs.createEl("button", { text: "Edit" });
 
-    const body = root.createDiv({ cls: "me-body me-body--mobile" });
-    const panel1 = body.createDiv({ cls: "me-panel is-active" });
-    const panel2 = body.createDiv({ cls: "me-panel" });
+    const panel1 = root.createDiv({ cls: "me-panel is-active" });
+    const panel2 = root.createDiv({ cls: "me-panel" });
 
-    this.mountBuilder(this.section(panel1, "Dotaz"));
-    this.mountResults(this.section(panel1, "Výsledky"));
-    this.mountOps(this.section(panel2, "Editační operace"));
+    this.mountBuilder(this.section(panel1, "Query"));
+    this.mountResults(this.section(panel1, "Results"));
+    this.mountOps(this.section(panel2, "Operations"));
     this.mountApplyBar(panel2);
 
     const activate = (idx: number) => {
-      tab1Btn.toggleClass("is-active", idx === 0);
-      tab2Btn.toggleClass("is-active", idx === 1);
+      tab1.toggleClass("is-active", idx === 0);
+      tab2.toggleClass("is-active", idx === 1);
       panel1.toggleClass("is-active", idx === 0);
       panel2.toggleClass("is-active", idx === 1);
     };
-    tab1Btn.onclick = () => activate(0);
-    tab2Btn.onclick = () => activate(1);
+    tab1.onclick = () => activate(0);
+    tab2.onclick = () => activate(1);
   }
 
   // ---------- mounts ----------
@@ -162,22 +154,18 @@ export class MassEditView extends ItemView {
   }
 
   private mountOps(container: HTMLElement): void {
-    this.opsPanel = new OperationsPanel(this.ops, () => this.onOpsChange());
+    this.opsPanel = new OperationsPanel(this.ops, () => this.refreshApplyState());
     this.opsPanel.mount(container);
   }
 
   private mountApplyBar(parent: HTMLElement): void {
-    const bar = parent.createDiv({ cls: "me-apply-bar" });
-    this.summaryEl = bar.createDiv({ cls: "me-apply-bar__summary" });
-    this.applyBtn = bar.createEl("button", {
-      cls: "me-btn me-btn--primary me-btn--apply",
-      text: "Aplikovat",
-    });
+    const bar = parent.createDiv({ cls: "me-apply" });
+    this.applyNote = bar.createDiv({ cls: "me-apply__note" });
+    this.applyBtn = bar.createEl("button", { cls: "mod-cta", text: "Apply" });
     this.applyBtn.onclick = () => void this.startApply();
-    this.refreshApplyState();
   }
 
-  // ---------- živé počítadlo ----------
+  // ---------- live count ----------
 
   private scheduleCount(): void {
     if (this.countTimer !== null) window.clearTimeout(this.countTimer);
@@ -189,45 +177,40 @@ export class MassEditView extends ItemView {
 
   private updateCount(): void {
     const { certain, maybe } = estimatePhase1(this.app, this.query);
-    if (maybe > 0) {
-      this.countEl.setText(`až ${noteCount(certain + maybe)}`);
-    } else {
-      this.countEl.setText(noteCount(certain));
-    }
+    this.countEl.setText(
+      maybe > 0
+        ? `up to ${noteCount(certain + maybe)}`
+        : noteCount(certain)
+    );
   }
 
-  // ---------- vyhledávání ----------
+  // ---------- search ----------
 
   private async runSearch(): Promise<void> {
     this.searchAbort?.abort();
     this.searchAbort = new AbortController();
     this.searchBtn.disabled = true;
-    this.searchBtn.setText("Hledám…");
+    this.searchBtn.setText("Searching…");
     try {
       const res = await search(this.app, this.query, {
         signal: this.searchAbort.signal,
       });
       this.results = res.files;
       this.selected.clear();
-      if (this.plugin.settings.defaultSelectAll) {
+      if (this.plugin.settings.defaultSelectAll)
         res.files.forEach((f) => this.selected.add(f.path));
-      }
       this.resultsList.setFiles(res.files);
       this.countEl.setText(noteCount(res.files.length));
     } catch (e) {
-      new Notice("Chyba při hledání: " + (e as Error).message);
+      new Notice("Search failed: " + (e as Error).message);
     } finally {
       this.searchBtn.disabled = false;
-      this.searchBtn.setText("Hledat");
+      this.searchBtn.setText("Search");
       this.refreshApplyState();
     }
   }
 
-  // ---------- operace / stav Aplikovat ----------
-
-  private onOpsChange(): void {
-    this.refreshApplyState();
-  }
+  // ---------- apply state ----------
 
   private selectedFiles(): TFile[] {
     return this.results.filter((f) => this.selected.has(f.path));
@@ -238,13 +221,12 @@ export class MassEditView extends ItemView {
   }
 
   private canApply(): { ok: boolean; reason: string } {
-    const files = this.selectedFiles();
-    if (files.length === 0)
-      return { ok: false, reason: "Vyberte alespoň jednu poznámku." };
+    if (this.selectedFiles().length === 0)
+      return { ok: false, reason: "Select at least one note." };
     if (this.ops.length === 0)
-      return { ok: false, reason: "Přidejte alespoň jednu operaci." };
+      return { ok: false, reason: "Add at least one operation." };
     if (this.ops.some((o) => !isOpValid(o)))
-      return { ok: false, reason: "Některá operace není kompletní." };
+      return { ok: false, reason: "An operation is incomplete." };
     return { ok: true, reason: "" };
   }
 
@@ -253,17 +235,17 @@ export class MassEditView extends ItemView {
     this.applyBtn.disabled = !ok;
     const files = this.selectedFiles();
     if (ok) {
-      this.summaryEl.setText(
-        `Připraveno: ${this.ops.length} operací na ${noteCount(files.length)}.`
+      this.applyNote.setText(
+        `${this.ops.length} operation(s) on ${noteCount(files.length)}.`
       );
-      this.summaryEl.removeClass("is-warn");
+      this.applyNote.removeClass("is-warn");
     } else {
-      this.summaryEl.setText(reason);
-      this.summaryEl.addClass("is-warn");
+      this.applyNote.setText(reason);
+      this.applyNote.addClass("is-warn");
     }
   }
 
-  // ---------- aplikační flow ----------
+  // ---------- apply flow ----------
 
   private async startApply(): Promise<void> {
     if (!this.canApply().ok) return;
@@ -286,19 +268,17 @@ export class MassEditView extends ItemView {
 
   private async doApply(files: TFile[]): Promise<void> {
     this.applyBtn.disabled = true;
-    this.applyBtn.setText("Aplikuji…");
+    this.applyBtn.setText("Applying…");
     const ops = this.validOps();
     const scope = this.plugin.settings.regexScope;
 
     try {
-      // 1) záloha
       const { manifest } = await this.plugin.backup.createRun(
         files,
         this.query,
         ops
       );
 
-      // 2) aplikace per soubor, izolace chyb
       let okCount = 0;
       let failCount = 0;
       let totalReplacements = 0;
@@ -315,31 +295,28 @@ export class MassEditView extends ItemView {
           errors.push(`${res.path}: ${res.error}`);
         }
         try {
-          afterHashes.set(file.path, hashString(await this.app.vault.read(file)));
+          afterHashes.set(
+            file.path,
+            hashString(await this.app.vault.read(file))
+          );
         } catch {
           /* ignore */
         }
       }
 
-      // 3) finalizace běhu (hashAfter + historie + retence)
       await this.plugin.backup.finalizeRun(manifest, afterHashes);
 
-      // 4) report
-      const lines = [
-        `Upraveno: ${okCount}`,
-        `Selhalo: ${failCount}`,
-      ];
+      const lines = [`Edited: ${okCount}`, `Failed: ${failCount}`];
       if (totalReplacements > 0)
-        lines.push(`Regex nahrazení: ${totalReplacements}`);
-      lines.push(`Záloha: běh ${manifest.runId}`);
-      errors.slice(0, 20).forEach((e) => lines.push("Chyba " + e));
-      new ResultModal(this.app, "Hotovo", lines).open();
-
-      new Notice(`Mass Editor: upraveno ${okCount}, selhalo ${failCount}.`);
+        lines.push(`Regex replacements: ${totalReplacements}`);
+      lines.push(`Backup: run ${manifest.runId}`);
+      errors.slice(0, 20).forEach((e) => lines.push("Error " + e));
+      new ResultModal(this.app, "Done", lines).open();
+      new Notice(`Mass Editor: edited ${okCount}, failed ${failCount}.`);
     } catch (e) {
-      new Notice("Aplikace selhala: " + (e as Error).message);
+      new Notice("Apply failed: " + (e as Error).message);
     } finally {
-      this.applyBtn.setText("Aplikovat");
+      this.applyBtn.setText("Apply");
       this.refreshApplyState();
     }
   }
