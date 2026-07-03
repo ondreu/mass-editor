@@ -1,5 +1,6 @@
 import { Plugin } from "obsidian";
 import {
+  DEFAULT_COLUMNS,
   DEFAULT_SETTINGS,
   type MassEditSettings,
   MassEditSettingTab,
@@ -63,6 +64,11 @@ export default class MassEditorPlugin extends Plugin {
     // history and presets must be arrays
     if (!Array.isArray(this.settings.history)) this.settings.history = [];
     if (!Array.isArray(this.settings.presets)) this.settings.presets = [];
+    if (
+      !Array.isArray(this.settings.resultColumns) ||
+      this.settings.resultColumns.length === 0
+    )
+      this.settings.resultColumns = DEFAULT_COLUMNS.map((c) => ({ ...c }));
   }
 
   async saveSettings(): Promise<void> {

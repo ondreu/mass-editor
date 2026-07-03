@@ -6,12 +6,14 @@ import type {
   UndoPlan,
 } from "../backup/backupManager";
 import type MassEditorPlugin from "../main";
-import type { Preset } from "../settings";
+import type { Preset, ResultColumn, ColumnType } from "../settings";
 import type { Group } from "../query/types";
 import { type EditOp, orderOps } from "../edit/operations";
 import { type RegexScope, transformBody } from "../edit/applier";
 import { buildReport, writeReport } from "../edit/report";
 import { renderDiff } from "./diffView";
+import { COLUMN_TYPES } from "./columns";
+import { ListSuggest, type SuggestSources } from "./suggest";
 import { noteCount, uid } from "./dom";
 
 const FM_KINDS = new Set<EditOp["kind"]>([
@@ -743,6 +745,146 @@ export class PresetsModal extends Modal {
       if (idx >= 0) this.plugin.settings.presets.splice(idx, 1);
       await this.plugin.saveSettings();
       this.render();
+    };
+  }
+
+  onClose(): void {
+    this.contentEl.empty();
+  }
+}
+
+/**
+ * Configure the metadata columns shown in the results table. Each column picks
+ * what it displays (note name, folder, a frontmatter key, tags, created /
+ * modified date), an optional custom header, and whether it's visible. Columns
+ * can be reordered and removed; changes persist and re-render the list live.
+ */
+export class ColumnsModal extends Modal {
+  constructor(
+    app: App,
+    private plugin: MassEditorPlugin,
+    private sources: SuggestSources,
+    private onChange: () => void
+  ) {
+    super(app);
+  }
+
+  onOpen(): void {
+    this.render();
+  }
+
+  private get columns(): ResultColumn[] {
+    return this.plugin.settings.resultColumns;
+  }
+
+  private async commit(): Promise<void> {
+    await this.plugin.saveSettings();
+    this.onChange();
+    this.render();
+  }
+
+  private render(): void {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("me-modal");
+    contentEl.createEl("h3", { text: "Results columns" });
+    contentEl.createEl("p", {
+      cls: "me-diff__note",
+      text: "Choose which metadata each column shows. Hidden columns stay configured but aren't displayed.",
+    });
+
+    const list = contentEl.createDiv({ cls: "me-columns" });
+    this.columns.forEach((col, i) => this.renderColumn(list, col, i));
+
+    const add = contentEl.createDiv({ cls: "modal-button-container" });
+    const addBtn = add.createEl("button", { cls: "mod-cta", text: "Add column" });
+    addBtn.onclick = () => {
+      this.columns.push({ id: uid("col"), type: "frontmatter", key: "" });
+      void this.commit();
+    };
+  }
+
+  private renderColumn(list: HTMLElement, col: ResultColumn, i: number): void {
+    const row = list.createDiv({ cls: "me-column" });
+    if (col.hidden) row.addClass("is-hidden");
+
+    const show = row.createEl("input", { attr: { type: "checkbox" } });
+    show.checked = !col.hidden;
+    show.setAttribute("aria-label", "Show column");
+    show.onchange = () => {
+      col.hidden = !show.checked;
+      void this.commit();
+    };
+
+    const typeSel = row.createEl("select", { cls: "dropdown" });
+    COLUMN_TYPES.forEach((t) => {
+      const opt = typeSel.createEl("option", { text: t.label });
+      opt.value = t.type;
+      if (col.type === t.type) opt.selected = true;
+    });
+    typeSel.onchange = () => {
+      col.type = typeSel.value as ColumnType;
+      if (col.type !== "frontmatter") col.key = undefined;
+      void this.commit();
+    };
+
+    if (col.type === "frontmatter") {
+      const keyInput = row.createEl("input", {
+        cls: "me-column__key",
+        attr: { type: "text", placeholder: "frontmatter key" },
+      });
+      keyInput.value = col.key ?? "";
+      keyInput.oninput = () => {
+        col.key = keyInput.value;
+        void this.plugin.saveSettings();
+        this.onChange();
+      };
+      new ListSuggest(
+        this.app,
+        keyInput,
+        () => this.sources.frontmatterKeys(),
+        (v) => {
+          col.key = v;
+          void this.commit();
+        }
+      );
+    }
+
+    const labelInput = row.createEl("input", {
+      cls: "me-column__label",
+      attr: { type: "text", placeholder: "header (optional)" },
+    });
+    labelInput.value = col.label ?? "";
+    labelInput.oninput = () => {
+      col.label = labelInput.value;
+      void this.plugin.saveSettings();
+      this.onChange();
+    };
+
+    const up = row.createEl("div", { cls: "clickable-icon" });
+    setIcon(up, "chevron-up");
+    up.setAttribute("aria-label", "Move up");
+    up.onclick = () => {
+      if (i === 0) return;
+      [this.columns[i - 1], this.columns[i]] = [this.columns[i], this.columns[i - 1]];
+      void this.commit();
+    };
+
+    const down = row.createEl("div", { cls: "clickable-icon" });
+    setIcon(down, "chevron-down");
+    down.setAttribute("aria-label", "Move down");
+    down.onclick = () => {
+      if (i >= this.columns.length - 1) return;
+      [this.columns[i + 1], this.columns[i]] = [this.columns[i], this.columns[i + 1]];
+      void this.commit();
+    };
+
+    const del = row.createEl("div", { cls: "clickable-icon" });
+    setIcon(del, "trash-2");
+    del.setAttribute("aria-label", "Remove column");
+    del.onclick = () => {
+      this.columns.splice(i, 1);
+      void this.commit();
     };
   }
 

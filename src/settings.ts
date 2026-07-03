@@ -13,6 +13,33 @@ export interface Preset {
   ops: EditOp[];
 }
 
+/** What a results column displays. */
+export type ColumnType =
+  | "name"
+  | "path"
+  | "frontmatter"
+  | "tags"
+  | "created"
+  | "modified";
+
+/** A column in the results table. */
+export interface ResultColumn {
+  id: string;
+  type: ColumnType;
+  /** Frontmatter key (only when `type === "frontmatter"`). */
+  key?: string;
+  /** Custom header text; empty = a default derived from the type. */
+  label?: string;
+  /** Hidden columns stay configured but aren't shown. */
+  hidden?: boolean;
+}
+
+/** Default results columns: note name + folder (both hideable). */
+export const DEFAULT_COLUMNS: ResultColumn[] = [
+  { id: "col-name", type: "name" },
+  { id: "col-path", type: "path" },
+];
+
 export interface MassEditSettings {
   backupFolder: string;
   backupRetention: number;
@@ -26,6 +53,8 @@ export interface MassEditSettings {
   reportFolder: string;
   /** Saved query + operation templates. */
   presets: Preset[];
+  /** Columns shown in the results table. */
+  resultColumns: ResultColumn[];
   /** Run history for undo. */
   history: RunRecord[];
 }
@@ -40,6 +69,7 @@ export const DEFAULT_SETTINGS: MassEditSettings = {
   diffSplitView: false,
   reportFolder: "Mass Editor Reports",
   presets: [],
+  resultColumns: DEFAULT_COLUMNS.map((c) => ({ ...c })),
   history: [],
 };
 
