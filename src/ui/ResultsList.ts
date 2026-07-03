@@ -1,8 +1,9 @@
 import { type App, setIcon, type TFile } from "obsidian";
 import { MatchPreviewModal, type RegexSpec } from "./modals";
-import { noteCount } from "./dom";
-import type { ResultColumn } from "../settings";
-import { columnHeader, columnValue } from "./columns";
+import { noteCount, uid } from "./dom";
+import type { ResultColumn, ColumnType } from "../settings";
+import { COLUMN_TYPES, columnValue } from "./columns";
+import { ListSuggest, type SuggestSources } from "./suggest";
 
 const ROW_HEIGHT = 30; // px, must match .me-result in styles.css
 const BUFFER = 6;
@@ -26,10 +27,12 @@ export class ResultsList {
     private onChange: () => void,
     /** Returns the current body-regex operations (for the match preview). */
     private getRegexSpecs: () => RegexSpec[] = () => [],
-    /** Columns to display (name is present by default, all hideable). */
-    private getColumns: () => ResultColumn[] = () => [],
-    /** Opens the column configuration UI. */
-    private onConfigure: () => void = () => {}
+    /** Live column list (mutated in place; configured inline in the header). */
+    private columns: ResultColumn[] = [],
+    /** Persists a column change (e.g. plugin.saveSettings). */
+    private saveColumns: () => void = () => {},
+    /** Autocomplete source for frontmatter keys. */
+    private sources?: SuggestSources
   ) {
     this.selected = selected;
   }
@@ -52,11 +55,6 @@ export class ResultsList {
     };
 
     this.countEl = bar.createDiv({ cls: "me-results__count" });
-
-    const cog = bar.createDiv({ cls: "clickable-icon me-results__config" });
-    setIcon(cog, "settings-2");
-    cog.setAttribute("aria-label", "Configure columns");
-    cog.onclick = () => this.onConfigure();
 
     this.head = container.createDiv({ cls: "me-results__head" });
 
@@ -87,30 +85,85 @@ export class ResultsList {
     this.renderWindow();
   }
 
-  private visibleColumns(): ResultColumn[] {
-    return this.getColumns().filter((c) => !c.hidden);
-  }
-
   private computeGrid(cols: ResultColumn[]): string {
-    // checkbox · one flexible track per column · trailing actions
-    const tracks = cols.map(() => "minmax(60px, 1fr)").join(" ");
+    // checkbox · one flexible track per column · trailing actions / add-button
+    const tracks = cols.map(() => "minmax(80px, 1fr)").join(" ");
     return `auto ${tracks} auto`.replace(/\s+/g, " ").trim();
   }
 
+  /**
+   * The header doubles as the column configurator: each cell carries a type
+   * dropdown (plus a key field for frontmatter) and a remove button, and a
+   * trailing "+" adds a new column.
+   */
   private renderHead(): void {
-    const cols = this.visibleColumns();
+    const cols = this.columns;
     this.gridTemplate = this.computeGrid(cols);
     this.head.empty();
     this.head.style.gridTemplateColumns = this.gridTemplate;
     // spacer cell aligned with each row's checkbox
     this.head.createDiv({ cls: "me-results__head-check" });
-    for (const col of cols) {
-      this.head.createDiv({
-        cls: "me-results__head-cell",
-        text: columnHeader(col),
+    cols.forEach((col, i) => this.renderHeadCell(col, i));
+
+    const add = this.head.createDiv({ cls: "me-results__head-add" });
+    const btn = add.createDiv({ cls: "clickable-icon" });
+    setIcon(btn, "plus");
+    btn.setAttribute("aria-label", "Add column");
+    btn.onclick = () => {
+      this.columns.push({ id: uid("col"), type: "frontmatter", key: "" });
+      this.saveColumns();
+      this.refreshColumns();
+    };
+  }
+
+  private renderHeadCell(col: ResultColumn, i: number): void {
+    const cell = this.head.createDiv({ cls: "me-results__head-cell" });
+
+    const typeSel = cell.createEl("select", { cls: "dropdown me-col__type" });
+    COLUMN_TYPES.forEach((t) => {
+      const opt = typeSel.createEl("option", { text: t.label });
+      opt.value = t.type;
+      if (col.type === t.type) opt.selected = true;
+    });
+    typeSel.onchange = () => {
+      col.type = typeSel.value as ColumnType;
+      if (col.type !== "frontmatter") col.key = undefined;
+      this.saveColumns();
+      this.refreshColumns();
+    };
+
+    if (col.type === "frontmatter") {
+      const keyInput = cell.createEl("input", {
+        cls: "me-col__key",
+        attr: { type: "text", placeholder: "key" },
       });
+      keyInput.value = col.key ?? "";
+      keyInput.oninput = () => {
+        col.key = keyInput.value;
+        this.saveColumns();
+        this.renderWindow();
+      };
+      if (this.sources)
+        new ListSuggest(
+          this.app,
+          keyInput,
+          () => this.sources!.frontmatterKeys(),
+          (v) => {
+            col.key = v;
+            this.saveColumns();
+            this.renderWindow();
+          }
+        );
     }
-    this.head.createDiv({ cls: "me-results__head-actions" });
+
+    const del = cell.createDiv({ cls: "clickable-icon me-col__remove" });
+    setIcon(del, "x");
+    del.setAttribute("aria-label", "Remove column");
+    del.onclick = () => {
+      this.columns.splice(i, 1);
+      this.saveColumns();
+      this.refreshColumns();
+    };
   }
 
   private updateCount(): void {
@@ -137,7 +190,7 @@ export class ResultsList {
     const first = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - BUFFER);
     const visible = Math.ceil(height / ROW_HEIGHT) + BUFFER * 2;
     const last = Math.min(this.files.length, first + visible);
-    const cols = this.visibleColumns();
+    const cols = this.columns;
 
     this.rows.empty();
     this.rows.style.transform = `translateY(${first * ROW_HEIGHT}px)`;

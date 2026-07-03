@@ -28,13 +28,9 @@ export interface ResultColumn {
   type: ColumnType;
   /** Frontmatter key (only when `type === "frontmatter"`). */
   key?: string;
-  /** Custom header text; empty = a default derived from the type. */
-  label?: string;
-  /** Hidden columns stay configured but aren't shown. */
-  hidden?: boolean;
 }
 
-/** Default results columns: note name + folder (both hideable). */
+/** Default results columns: note name + folder (both removable). */
 export const DEFAULT_COLUMNS: ResultColumn[] = [
   { id: "col-name", type: "name" },
   { id: "col-path", type: "path" },

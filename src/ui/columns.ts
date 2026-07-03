@@ -11,16 +11,6 @@ export const COLUMN_TYPES: { type: ColumnType; label: string }[] = [
   { type: "modified", label: "Modified" },
 ];
 
-const TYPE_LABEL = new Map(COLUMN_TYPES.map((t) => [t.type, t.label]));
-
-/** Header text for a column: the custom label, else a sensible default. */
-export function columnHeader(col: ResultColumn): string {
-  if (col.label && col.label.trim() !== "") return col.label.trim();
-  if (col.type === "frontmatter")
-    return col.key && col.key.trim() !== "" ? col.key.trim() : "Frontmatter";
-  return TYPE_LABEL.get(col.type) ?? col.type;
-}
-
 /** Renders a single value into a stringy form for a table cell. */
 function formatValue(v: unknown): string {
   if (v === null || v === undefined) return "";

@@ -17,7 +17,6 @@ import { QueryBuilder, newGroup } from "../ui/QueryBuilder";
 import { ResultsList } from "../ui/ResultsList";
 import { OperationsPanel } from "../ui/OperationsPanel";
 import {
-  ColumnsModal,
   ConfirmApplyModal,
   HistoryModal,
   PresetsModal,
@@ -199,11 +198,9 @@ export class MassEditView extends ItemView {
       this.selected,
       () => this.refreshApplyState(),
       () => this.regexSpecs(),
-      () => this.plugin.settings.resultColumns,
-      () =>
-        new ColumnsModal(this.app, this.plugin, this.sources, () =>
-          this.resultsList.refreshColumns()
-        ).open()
+      this.plugin.settings.resultColumns,
+      () => void this.plugin.saveSettings(),
+      this.sources
     );
     this.resultsList.mount(container);
   }
