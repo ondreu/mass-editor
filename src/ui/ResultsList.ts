@@ -1,7 +1,7 @@
 import { type App, setIcon, type TFile } from "obsidian";
 import { MatchPreviewModal, type RegexSpec } from "./modals";
 import { noteCount, uid } from "./dom";
-import type { ResultColumn, ColumnType } from "../settings";
+import type { ResultColumn, ColumnSource, ColumnType } from "../settings";
 import { COLUMN_TYPES, columnValue } from "./columns";
 import { ListSuggest, type SuggestSources } from "./suggest";
 
@@ -118,45 +118,31 @@ export class ResultsList {
 
   private renderHeadCell(col: ResultColumn, i: number): void {
     const cell = this.head.createDiv({ cls: "me-results__head-cell" });
-
-    const typeSel = cell.createEl("select", { cls: "dropdown me-col__type" });
-    COLUMN_TYPES.forEach((t) => {
-      const opt = typeSel.createEl("option", { text: t.label });
-      opt.value = t.type;
-      if (col.type === t.type) opt.selected = true;
-    });
-    typeSel.onchange = () => {
-      col.type = typeSel.value as ColumnType;
-      if (col.type !== "frontmatter") col.key = undefined;
-      this.saveColumns();
-      this.refreshColumns();
+    cell.ondragover = (e) => {
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+      cell.addClass("is-drop-target");
+    };
+    cell.ondragleave = () => cell.removeClass("is-drop-target");
+    cell.ondrop = (e) => {
+      e.preventDefault();
+      cell.removeClass("is-drop-target");
+      const from = Number(e.dataTransfer?.getData("text/plain"));
+      if (Number.isInteger(from)) this.moveColumn(from, i);
     };
 
-    if (col.type === "frontmatter") {
-      const keyInput = cell.createEl("input", {
-        cls: "me-col__key",
-        attr: { type: "text", placeholder: "key" },
-      });
-      keyInput.value = col.key ?? "";
-      keyInput.oninput = () => {
-        col.key = keyInput.value;
-        this.saveColumns();
-        this.renderWindow();
-      };
-      if (this.sources)
-        new ListSuggest(
-          this.app,
-          keyInput,
-          () => this.sources!.frontmatterKeys(),
-          (v) => {
-            col.key = v;
-            this.saveColumns();
-            this.renderWindow();
-          }
-        );
-    }
-
-    const del = cell.createDiv({ cls: "clickable-icon me-col__remove" });
+    // Primary source row: drag handle · type/key · remove-column.
+    const main = cell.createDiv({ cls: "me-col__row" });
+    const grip = main.createDiv({ cls: "me-col__grip" });
+    setIcon(grip, "grip-vertical");
+    grip.setAttribute("aria-label", "Drag to reorder");
+    grip.draggable = true;
+    grip.ondragstart = (e) => {
+      e.dataTransfer?.setData("text/plain", String(i));
+      if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+    };
+    this.renderSource(main, col);
+    const del = main.createDiv({ cls: "clickable-icon me-col__remove" });
     setIcon(del, "x");
     del.setAttribute("aria-label", "Remove column");
     del.onclick = () => {
@@ -164,6 +150,78 @@ export class ResultsList {
       this.saveColumns();
       this.refreshColumns();
     };
+
+    // Fallback (OR) alternatives, tried in order when earlier ones are empty.
+    (col.alts ?? []).forEach((alt, ai) => {
+      const row = cell.createDiv({ cls: "me-col__row me-col__alt" });
+      row.createSpan({ cls: "me-col__or", text: "or" });
+      this.renderSource(row, alt);
+      const rm = row.createDiv({ cls: "clickable-icon me-col__remove" });
+      setIcon(rm, "x");
+      rm.setAttribute("aria-label", "Remove alternative");
+      rm.onclick = () => {
+        col.alts?.splice(ai, 1);
+        if (col.alts && col.alts.length === 0) delete col.alts;
+        this.saveColumns();
+        this.refreshColumns();
+      };
+    });
+
+    const addOr = cell.createSpan({ cls: "me-col__addor", text: "+ or" });
+    addOr.setAttribute("aria-label", "Add fallback value");
+    addOr.onclick = () => {
+      (col.alts ??= []).push({ type: "frontmatter", key: "" });
+      this.saveColumns();
+      this.refreshColumns();
+    };
+  }
+
+  /** Renders a type dropdown (+ frontmatter key field) bound to one source. */
+  private renderSource(parent: HTMLElement, src: ColumnSource): void {
+    const typeSel = parent.createEl("select", { cls: "dropdown me-col__type" });
+    COLUMN_TYPES.forEach((t) => {
+      const opt = typeSel.createEl("option", { text: t.label });
+      opt.value = t.type;
+      if (src.type === t.type) opt.selected = true;
+    });
+    typeSel.onchange = () => {
+      src.type = typeSel.value as ColumnType;
+      if (src.type !== "frontmatter") src.key = undefined;
+      this.saveColumns();
+      this.refreshColumns();
+    };
+
+    if (src.type !== "frontmatter") return;
+    const keyInput = parent.createEl("input", {
+      cls: "me-col__key",
+      attr: { type: "text", placeholder: "key" },
+    });
+    keyInput.value = src.key ?? "";
+    keyInput.oninput = () => {
+      src.key = keyInput.value;
+      this.saveColumns();
+      this.renderWindow();
+    };
+    if (this.sources)
+      new ListSuggest(
+        this.app,
+        keyInput,
+        () => this.sources!.frontmatterKeys(),
+        (v) => {
+          src.key = v;
+          this.saveColumns();
+          this.renderWindow();
+        }
+      );
+  }
+
+  /** Moves the column at `from` to the slot occupied by index `to`. */
+  private moveColumn(from: number, to: number): void {
+    if (from === to || from < 0 || from >= this.columns.length) return;
+    const [col] = this.columns.splice(from, 1);
+    this.columns.splice(from < to ? to - 1 : to, 0, col);
+    this.saveColumns();
+    this.refreshColumns();
   }
 
   private updateCount(): void {

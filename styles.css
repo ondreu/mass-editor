@@ -267,9 +267,61 @@
 }
 .me-results__head-cell {
   display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
+  min-width: 0;
+  border-radius: var(--radius-s);
+}
+.me-results__head-cell.is-drop-target {
+  box-shadow: inset 2px 0 0 var(--interactive-accent);
+}
+.me-col__row {
+  display: flex;
   align-items: center;
   gap: 4px;
   min-width: 0;
+}
+.me-col__or {
+  flex: 0 0 auto;
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  font-style: italic;
+  width: 13px;
+  text-align: center;
+}
+.me-col__addor {
+  align-self: flex-start;
+  margin-left: 17px;
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  cursor: pointer;
+  opacity: 0;
+}
+.me-results__head-cell:hover .me-col__addor {
+  opacity: 0.7;
+}
+.me-col__addor:hover {
+  color: var(--text-accent);
+  opacity: 1;
+}
+.me-col__grip {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  cursor: grab;
+  opacity: 0;
+  color: var(--text-faint);
+}
+.me-col__grip:active {
+  cursor: grabbing;
+}
+.me-results__head-cell:hover .me-col__grip {
+  opacity: 0.6;
+}
+.me-col__grip .svg-icon {
+  width: 13px;
+  height: 13px;
 }
 .me-results__head-check {
   width: var(--checkbox-size, 16px);

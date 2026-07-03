@@ -22,12 +22,21 @@ export type ColumnType =
   | "created"
   | "modified";
 
-/** A column in the results table. */
-export interface ResultColumn {
-  id: string;
+/** One metadata source (a column's value, or a fallback alternative). */
+export interface ColumnSource {
   type: ColumnType;
   /** Frontmatter key (only when `type === "frontmatter"`). */
   key?: string;
+}
+
+/**
+ * A column in the results table. Its value is the primary source; if that is
+ * empty, each alternative in `alts` is tried in turn (an OR / coalesce chain).
+ */
+export interface ResultColumn extends ColumnSource {
+  id: string;
+  /** Fallback sources, used when earlier ones yield no value. */
+  alts?: ColumnSource[];
 }
 
 /** Default results columns: note name + folder (both removable). */

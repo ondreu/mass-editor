@@ -1,5 +1,5 @@
 import { type App, type TFile, getAllTags } from "obsidian";
-import type { ResultColumn, ColumnType } from "../settings";
+import type { ResultColumn, ColumnSource, ColumnType } from "../settings";
 
 /** Column types the user can choose from, in the order shown in the picker. */
 export const COLUMN_TYPES: { type: ColumnType; label: string }[] = [
@@ -34,8 +34,22 @@ function formatDate(ms: number): string {
   });
 }
 
-/** Computes the display value of a column for a given file. */
+/**
+ * Computes a column's display value: the primary source, falling back to each
+ * alternative in turn (OR / coalesce) until one yields a non-empty value.
+ */
 export function columnValue(app: App, file: TFile, col: ResultColumn): string {
+  const primary = sourceValue(app, file, col);
+  if (primary !== "") return primary;
+  for (const alt of col.alts ?? []) {
+    const v = sourceValue(app, file, alt);
+    if (v !== "") return v;
+  }
+  return "";
+}
+
+/** Computes the value of a single source (no fallback). */
+function sourceValue(app: App, file: TFile, col: ColumnSource): string {
   switch (col.type) {
     case "name":
       return file.basename;
