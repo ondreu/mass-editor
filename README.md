@@ -13,7 +13,7 @@ The UI inherits your active Obsidian theme.
 - **Fields:** tag, frontmatter (per key), body, name, path, location (folder + recursion), created/modified dates.
 - **Edit operations:** frontmatter set / add / delete / append-to-list, tag add / remove, body append / prepend, regex find & replace (capture groups `$1`).
 - **Result selection** via checkboxes (all selected by default), with a live count.
-- **Configurable result columns:** show any metadata as table columns — frontmatter (per key), tags, file created / modified dates, folder path, and the note name itself. Add a column with **+** and set what it shows right in the column header (a dropdown, plus a key field for frontmatter); remove it with **×**. The layout is remembered.
+- **Configurable result columns:** show any metadata as table columns — frontmatter (per key), tags, file created / modified dates, folder path, and the note name itself. The header shows plain column titles; **click a title to edit** that column (type / frontmatter key), **drag** it to reorder, drag its right edge to **resize** (double-click to reset), and add columns with **+**. Each column can also list **OR fallbacks** — e.g. show frontmatter `author`, or `owner` when it's missing. The layout is remembered.
 - **Resizable results pane:** drag the bottom edge of the results list to make it taller or shorter.
 - **Regex match preview:** peek at the lines a regex operation will hit in any result (with the matches highlighted) before you run it.
 - **Impact summary + change preview** before applying: a per-operation breakdown, plus an optional dry-run diff of the body transformation on a sample of the selected notes — nothing is written.
@@ -35,7 +35,7 @@ Open it via the ribbon icon (⟳) or the command **Mass Editor: Open**.
 
 1. **Query** — compose rules and groups. The AND/OR toggle is on each group, the NOT toggle on both rules and groups. The live count shows an estimate (`up to N notes`, until content rules are evaluated).
 2. **Search** — computes the full result (including reading bodies where needed).
-3. **Results** — uncheck any notes you don't want to change (all selected by default). Add metadata columns with **+** and configure each one directly in its header; drag the pane's bottom edge to resize it.
+3. **Results** — uncheck any notes you don't want to change (all selected by default). Columns show as a table with titled headers: **click a header** to edit it, **drag** to reorder, drag the right edge to resize, **+** to add. Drag the pane's bottom edge to make it taller.
 4. **Operations** — add one or more edit operations.
 5. **Apply** — an impact summary is shown; after confirmation a backup is created and the operations run.
 

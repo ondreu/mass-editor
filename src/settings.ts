@@ -37,6 +37,8 @@ export interface ResultColumn extends ColumnSource {
   id: string;
   /** Fallback sources, used when earlier ones yield no value. */
   alts?: ColumnSource[];
+  /** Fixed width in px; unset = flexible (shares remaining space evenly). */
+  width?: number;
 }
 
 /** Default results columns: note name + folder (both removable). */

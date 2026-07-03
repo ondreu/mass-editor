@@ -2,7 +2,7 @@ import { type App, setIcon, type TFile } from "obsidian";
 import { MatchPreviewModal, type RegexSpec } from "./modals";
 import { noteCount, uid } from "./dom";
 import type { ResultColumn, ColumnSource, ColumnType } from "../settings";
-import { COLUMN_TYPES, columnValue } from "./columns";
+import { COLUMN_TYPES, columnLabel, columnValue } from "./columns";
 import { ListSuggest, type SuggestSources } from "./suggest";
 
 const ROW_HEIGHT = 30; // px, must match .me-result in styles.css
@@ -20,6 +20,8 @@ export class ResultsList {
   private headerCheck!: HTMLInputElement;
   private gridTemplate = "";
   private resizeObserver: ResizeObserver | null = null;
+  /** Column being edited inline in the header (null = all show plain labels). */
+  private editingCol: string | null = null;
 
   constructor(
     private app: App,
@@ -86,15 +88,26 @@ export class ResultsList {
   }
 
   private computeGrid(cols: ResultColumn[]): string {
-    // checkbox · one flexible track per column · trailing actions / add-button
-    const tracks = cols.map(() => "minmax(80px, 1fr)").join(" ");
+    // checkbox · one track per column (fixed px if resized, else flexible) ·
+    // trailing actions / add-button
+    const tracks = cols
+      .map((c) => (c.width ? `${c.width}px` : "minmax(80px, 1fr)"))
+      .join(" ");
     return `auto ${tracks} auto`.replace(/\s+/g, " ").trim();
   }
 
+  /** Applies the current grid template to the header and every visible row. */
+  private applyGrid(): void {
+    this.head.style.gridTemplateColumns = this.gridTemplate;
+    this.rows
+      .querySelectorAll<HTMLElement>(".me-result")
+      .forEach((r) => (r.style.gridTemplateColumns = this.gridTemplate));
+  }
+
   /**
-   * The header doubles as the column configurator: each cell carries a type
-   * dropdown (plus a key field for frontmatter) and a remove button, and a
-   * trailing "+" adds a new column.
+   * Header row. Each cell shows a plain column label by default; clicking it
+   * reveals an inline editor (type / frontmatter key / OR fallbacks / remove).
+   * A trailing "+" adds a new column and opens it for editing.
    */
   private renderHead(): void {
     const cols = this.columns;
@@ -110,7 +123,9 @@ export class ResultsList {
     setIcon(btn, "plus");
     btn.setAttribute("aria-label", "Add column");
     btn.onclick = () => {
-      this.columns.push({ id: uid("col"), type: "frontmatter", key: "" });
+      const col: ResultColumn = { id: uid("col"), type: "frontmatter", key: "" };
+      this.columns.push(col);
+      this.editingCol = col.id;
       this.saveColumns();
       this.refreshColumns();
     };
@@ -131,9 +146,42 @@ export class ResultsList {
       if (Number.isInteger(from)) this.moveColumn(from, i);
     };
 
-    // Primary source row: drag handle · type/key · remove-column.
-    const main = cell.createDiv({ cls: "me-col__row" });
-    const grip = main.createDiv({ cls: "me-col__grip" });
+    if (this.editingCol === col.id) this.renderHeadEditor(cell, col, i);
+    else this.renderHeadLabel(cell, col, i);
+
+    // Right-edge handle: drag to set a fixed width, double-click to reset.
+    const resize = cell.createDiv({ cls: "me-col__resize" });
+    resize.setAttribute("aria-label", "Drag to resize");
+    resize.onmousedown = (e) => {
+      e.preventDefault();
+      const startX = e.clientX;
+      const startW = cell.getBoundingClientRect().width;
+      document.body.addClass("me-col-resizing");
+      const move = (ev: MouseEvent) => {
+        col.width = Math.round(Math.max(60, startW + (ev.clientX - startX)));
+        this.gridTemplate = this.computeGrid(this.columns);
+        this.applyGrid();
+      };
+      const up = () => {
+        document.removeEventListener("mousemove", move);
+        document.removeEventListener("mouseup", up);
+        document.body.removeClass("me-col-resizing");
+        this.saveColumns();
+      };
+      document.addEventListener("mousemove", move);
+      document.addEventListener("mouseup", up);
+    };
+    resize.ondblclick = () => {
+      delete col.width;
+      this.saveColumns();
+      this.refreshColumns();
+    };
+  }
+
+  /** Read-only header: a draggable label; click it to edit the column. */
+  private renderHeadLabel(cell: HTMLElement, col: ResultColumn, i: number): void {
+    // Grip lives in the left gutter (absolute) so labels line up with the data.
+    const grip = cell.createDiv({ cls: "me-col__grip" });
     setIcon(grip, "grip-vertical");
     grip.setAttribute("aria-label", "Drag to reorder");
     grip.draggable = true;
@@ -141,12 +189,38 @@ export class ResultsList {
       e.dataTransfer?.setData("text/plain", String(i));
       if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
     };
+
+    const row = cell.createDiv({ cls: "me-col__row" });
+    const label = row.createSpan({ cls: "me-col__label" });
+    label.createSpan({ cls: "me-col__labeltext", text: columnLabel(col) });
+    if (col.alts && col.alts.length > 0)
+      label.createSpan({ cls: "me-col__altbadge", text: `+${col.alts.length}` });
+    label.setAttribute("aria-label", "Edit column");
+    label.onclick = () => {
+      this.editingCol = col.id;
+      this.refreshColumns();
+    };
+  }
+
+  /** Editor header: type / key / OR fallbacks / remove, with a done button. */
+  private renderHeadEditor(cell: HTMLElement, col: ResultColumn, i: number): void {
+    cell.addClass("is-editing");
+
+    const main = cell.createDiv({ cls: "me-col__row" });
     this.renderSource(main, col);
+    const done = main.createDiv({ cls: "clickable-icon me-col__done" });
+    setIcon(done, "check");
+    done.setAttribute("aria-label", "Done");
+    done.onclick = () => {
+      this.editingCol = null;
+      this.refreshColumns();
+    };
     const del = main.createDiv({ cls: "clickable-icon me-col__remove" });
-    setIcon(del, "x");
+    setIcon(del, "trash-2");
     del.setAttribute("aria-label", "Remove column");
     del.onclick = () => {
       this.columns.splice(i, 1);
+      this.editingCol = null;
       this.saveColumns();
       this.refreshColumns();
     };
@@ -167,7 +241,7 @@ export class ResultsList {
       };
     });
 
-    const addOr = cell.createSpan({ cls: "me-col__addor", text: "+ or" });
+    const addOr = cell.createSpan({ cls: "me-col__addor", text: "+ or fallback" });
     addOr.setAttribute("aria-label", "Add fallback value");
     addOr.onclick = () => {
       (col.alts ??= []).push({ type: "frontmatter", key: "" });

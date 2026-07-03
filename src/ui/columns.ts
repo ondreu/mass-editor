@@ -11,6 +11,20 @@ export const COLUMN_TYPES: { type: ColumnType; label: string }[] = [
   { type: "modified", label: "Modified" },
 ];
 
+const TYPE_LABEL = new Map(COLUMN_TYPES.map((t) => [t.type, t.label]));
+
+/** Human-readable name for a single source. */
+export function sourceLabel(src: ColumnSource): string {
+  if (src.type === "frontmatter")
+    return src.key && src.key.trim() !== "" ? src.key.trim() : "Frontmatter";
+  return TYPE_LABEL.get(src.type) ?? src.type;
+}
+
+/** Header label for a column (its primary source's name). */
+export function columnLabel(col: ResultColumn): string {
+  return sourceLabel(col);
+}
+
 /** Renders a single value into a stringy form for a table cell. */
 function formatValue(v: unknown): string {
   if (v === null || v === undefined) return "";
