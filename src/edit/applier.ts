@@ -36,15 +36,27 @@ function ensureGlobal(flags: string): string {
   return flags.includes("g") ? flags : flags + "g";
 }
 
-/** End of the frontmatter block (offset in content), or 0 if none. */
-function frontmatterEnd(app: App, file: TFile, content: string): number {
-  const cache = app.metadataCache.getFileCache(file);
-  const end = cache?.frontmatterPosition?.end.offset;
-  if (typeof end === "number" && end > 0 && end <= content.length) {
-    // frontmatterPosition end is at `---`; skip a following newline if present
-    let e = end;
-    if (content[e] === "\n") e++;
-    return e;
+/**
+ * End of the frontmatter block (offset in content), or 0 if none.
+ *
+ * Parsed directly from `content` rather than the metadata cache: during apply
+ * the frontmatter pass rewrites the block first and the cache is updated
+ * asynchronously, so a cached offset would be stale (which made prepends land
+ * before the frontmatter). The content we're transforming is always current.
+ */
+function frontmatterEnd(content: string): number {
+  const lines = content.split("\n");
+  // Frontmatter must open with `---` on the very first line.
+  if (lines.length === 0 || lines[0].replace(/\r$/, "") !== "---") return 0;
+  let offset = lines[0].length + 1; // past the opening `---` and its newline
+  for (let i = 1; i < lines.length; i++) {
+    const bare = lines[i].replace(/\r$/, "");
+    if (bare === "---" || bare === "...") {
+      offset += lines[i].length; // through the closing delimiter line
+      if (content[offset] === "\n") offset++; // skip the following newline
+      return offset;
+    }
+    offset += lines[i].length + 1;
   }
   return 0;
 }
@@ -136,7 +148,7 @@ export function transformBody(
     if (op.kind === "body-regex") {
       const re = safeRegex(op.pattern, op.flags);
       if (!re) throw new Error(`Invalid regex: /${op.pattern}/${op.flags}`);
-      const fmEnd = scope === "body" ? frontmatterEnd(app, file, out) : 0;
+      const fmEnd = scope === "body" ? frontmatterEnd(out) : 0;
       const head = out.slice(0, fmEnd);
       const target = out.slice(fmEnd);
       const countRe = safeRegex(op.pattern, ensureGlobal(op.flags));
@@ -148,7 +160,7 @@ export function transformBody(
       const sep = out.endsWith("\n") || out === "" ? "" : "\n";
       out = out + sep + op.text + "\n";
     } else if (op.kind === "body-prepend") {
-      const fmEnd = frontmatterEnd(app, file, out);
+      const fmEnd = frontmatterEnd(out);
       const head = out.slice(0, fmEnd);
       const rest = out.slice(fmEnd);
       out = head + op.text + "\n" + rest;
@@ -156,7 +168,7 @@ export function transformBody(
       const text = captures ? captures.get(op) : fmToBodyTextFromCache(app, file, op);
       if (text == null || text === "") continue;
       if (op.position === "prepend") {
-        const fmEnd = frontmatterEnd(app, file, out);
+        const fmEnd = frontmatterEnd(out);
         const head = out.slice(0, fmEnd);
         const rest = out.slice(fmEnd);
         out = head + text + "\n" + rest;
@@ -165,7 +177,7 @@ export function transformBody(
         out = out + sep + text + "\n";
       }
     } else if (op.kind === "body-blank-lines") {
-      const fmEnd = frontmatterEnd(app, file, out);
+      const fmEnd = frontmatterEnd(out);
       const head = out.slice(0, fmEnd);
       const body = out.slice(fmEnd);
       out = head + normalizeBlankLines(body, op.rules);
