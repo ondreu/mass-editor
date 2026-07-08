@@ -16,6 +16,10 @@ function describeOp(op: EditOp): string {
       return `${label}: \`${op.key}\``;
     case "fm-list-append":
       return `${label}: \`${op.key}\` += \`${op.value}\``;
+    case "fm-to-body":
+      return `${label}: \`${op.key}\` → body (${op.position})${
+        op.removeKey ? ", remove key" : ""
+      }, template \`${op.template.replace(/\n/g, "\\n")}\``;
     case "tag-add":
     case "tag-remove":
       return `${label}: \`#${op.tag}\``;
@@ -24,6 +28,19 @@ function describeOp(op: EditOp): string {
     case "body-append":
     case "body-prepend":
       return `${label}: ${op.text.length} char(s)`;
+    case "body-blank-lines": {
+      const r = op.rules;
+      const flags = [
+        r.collapseAfterHeading && "after-heading",
+        r.collapseBeforeHeading && "before-heading",
+        r.collapseListItems && "lists",
+        r.collapseTasks && "tasks",
+        r.trimEnds && "trim-ends",
+      ].filter(Boolean);
+      return `${label}: max ${r.maxConsecutive}${
+        flags.length ? ` (${flags.join(", ")})` : ""
+      }`;
+    }
   }
 }
 

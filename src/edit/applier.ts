@@ -1,5 +1,10 @@
 import type { App, TFile } from "obsidian";
 import { type EditOp, coerceValue, orderOps } from "./operations";
+import { normalizeBlankLines } from "./blanklines";
+import { renderFmTemplate } from "./frontmatter";
+
+/** Text captured from a `fm-to-body` op during the frontmatter pass. */
+export type FmCaptures = Map<EditOp, string>;
 
 export type RegexScope = "body" | "whole";
 
@@ -44,11 +49,16 @@ function frontmatterEnd(app: App, file: TFile, content: string): number {
   return 0;
 }
 
-/** Applies frontmatter + tag operations in a single atomic pass. */
+/**
+ * Applies frontmatter + tag operations in a single atomic pass. For
+ * `fm-to-body` ops it captures the rendered text into `captures` (so the body
+ * pass can insert it), then optionally removes the key.
+ */
 async function applyFrontmatterOps(
   app: App,
   file: TFile,
-  ops: EditOp[]
+  ops: EditOp[],
+  captures: FmCaptures
 ): Promise<void> {
   await app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
     for (const op of ops) {
@@ -62,6 +72,13 @@ async function applyFrontmatterOps(
         case "fm-delete":
           delete fm[op.key];
           break;
+        case "fm-to-body": {
+          if (op.key in fm) {
+            captures.set(op, renderFmTemplate(op.template, op.key, fm[op.key]));
+            if (op.removeKey) delete fm[op.key];
+          }
+          break;
+        }
         case "fm-list-append": {
           const arr = toStringArray(fm[op.key]);
           if (!arr.includes(op.value)) arr.push(op.value);
@@ -89,14 +106,30 @@ async function applyFrontmatterOps(
   });
 }
 
-/** Builds the pure body transform; throws on invalid regex. Counts replacements. */
+/** Rendered text for a `fm-to-body` op, read from the metadata cache (preview). */
+function fmToBodyTextFromCache(
+  app: App,
+  file: TFile,
+  op: Extract<EditOp, { kind: "fm-to-body" }>
+): string | null {
+  const fm = app.metadataCache.getFileCache(file)?.frontmatter;
+  if (!fm || !(op.key in fm)) return null;
+  return renderFmTemplate(op.template, op.key, fm[op.key]);
+}
+
+/**
+ * Builds the pure body transform; throws on invalid regex. Counts replacements.
+ * `captures` supplies `fm-to-body` text from the frontmatter pass; when omitted
+ * (preview / preflight) the value is read from the metadata cache instead.
+ */
 export function transformBody(
   app: App,
   file: TFile,
   content: string,
   ops: EditOp[],
   scope: RegexScope,
-  counter: { n: number }
+  counter: { n: number },
+  captures?: FmCaptures
 ): string {
   let out = content;
   for (const op of ops) {
@@ -119,21 +152,39 @@ export function transformBody(
       const head = out.slice(0, fmEnd);
       const rest = out.slice(fmEnd);
       out = head + op.text + "\n" + rest;
+    } else if (op.kind === "fm-to-body") {
+      const text = captures ? captures.get(op) : fmToBodyTextFromCache(app, file, op);
+      if (text == null || text === "") continue;
+      if (op.position === "prepend") {
+        const fmEnd = frontmatterEnd(app, file, out);
+        const head = out.slice(0, fmEnd);
+        const rest = out.slice(fmEnd);
+        out = head + text + "\n" + rest;
+      } else {
+        const sep = out.endsWith("\n") || out === "" ? "" : "\n";
+        out = out + sep + text + "\n";
+      }
+    } else if (op.kind === "body-blank-lines") {
+      const fmEnd = frontmatterEnd(app, file, out);
+      const head = out.slice(0, fmEnd);
+      const body = out.slice(fmEnd);
+      out = head + normalizeBlankLines(body, op.rules);
     }
   }
   return out;
 }
 
-/** Applies body operations (regex/append/prepend) via the atomic API. */
+/** Applies body operations (regex/append/prepend/move/cleanup) via the atomic API. */
 async function applyBodyOps(
   app: App,
   file: TFile,
   ops: EditOp[],
-  scope: RegexScope
+  scope: RegexScope,
+  captures: FmCaptures
 ): Promise<number> {
   const counter = { n: 0 };
   const transform = (content: string): string =>
-    transformBody(app, file, content, ops, scope, counter);
+    transformBody(app, file, content, ops, scope, counter, captures);
 
   const vaultAny = app.vault as unknown as {
     process?: (f: TFile, fn: (c: string) => string) => Promise<string>;
@@ -183,13 +234,24 @@ function safeRegex(pattern: string, flags: string): RegExp | null {
   }
 }
 
+/** Ops that run in the frontmatter pass (`fm-to-body` captures/removes here). */
 const FM_KINDS = new Set<EditOp["kind"]>([
   "fm-set",
   "fm-add",
   "fm-delete",
   "fm-list-append",
+  "fm-to-body",
   "tag-add",
   "tag-remove",
+]);
+
+/** Ops that run in the body pass (`fm-to-body` inserts its captured text here). */
+const BODY_KINDS = new Set<EditOp["kind"]>([
+  "fm-to-body",
+  "body-regex",
+  "body-append",
+  "body-prepend",
+  "body-blank-lines",
 ]);
 
 /** Applies all operations to one file in fixed order, isolating errors. */
@@ -201,13 +263,14 @@ export async function applyToFile(
 ): Promise<ApplyResult> {
   const ordered = orderOps(ops);
   const fmOps = ordered.filter((o) => FM_KINDS.has(o.kind));
-  const bodyOps = ordered.filter((o) => !FM_KINDS.has(o.kind));
+  const bodyOps = ordered.filter((o) => BODY_KINDS.has(o.kind));
+  const captures: FmCaptures = new Map();
   let regexReplacements = 0;
 
   try {
-    if (fmOps.length > 0) await applyFrontmatterOps(app, file, fmOps);
+    if (fmOps.length > 0) await applyFrontmatterOps(app, file, fmOps, captures);
     if (bodyOps.length > 0)
-      regexReplacements = await applyBodyOps(app, file, bodyOps, scope);
+      regexReplacements = await applyBodyOps(app, file, bodyOps, scope, captures);
     return { path: file.path, ok: true, regexReplacements, changed: true };
   } catch (e) {
     return {

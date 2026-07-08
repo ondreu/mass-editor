@@ -1,10 +1,20 @@
 import { type App, setIcon } from "obsidian";
 import {
   type EditOp,
+  type FmToBodyPosition,
   type FmValueType,
   OP_LABELS,
   isOpValid,
 } from "../edit/operations";
+import {
+  FM_TO_BODY_PRESETS,
+  presetForTemplate,
+} from "../edit/frontmatter";
+import {
+  BLANK_LINE_PRESETS,
+  DEFAULT_BLANK_LINE_RULES,
+  presetForRules,
+} from "../edit/blanklines";
 import { ListSuggest, type SuggestSources } from "./suggest";
 
 type OpKind = EditOp["kind"];
@@ -22,6 +32,14 @@ function newOp(kind: OpKind): EditOp {
       return { kind, key: "" };
     case "fm-list-append":
       return { kind, key: "", value: "" };
+    case "fm-to-body":
+      return {
+        kind,
+        key: "",
+        position: "append",
+        template: FM_TO_BODY_PRESETS[0].template,
+        removeKey: true,
+      };
     case "tag-add":
     case "tag-remove":
       return { kind, tag: "" };
@@ -30,6 +48,8 @@ function newOp(kind: OpKind): EditOp {
     case "body-append":
     case "body-prepend":
       return { kind, text: "" };
+    case "body-blank-lines":
+      return { kind, rules: { ...DEFAULT_BLANK_LINE_RULES } };
   }
 }
 
@@ -120,6 +140,41 @@ export class OperationsPanel {
     return el;
   }
 
+  private select(
+    parent: HTMLElement,
+    options: { value: string; label: string }[],
+    value: string,
+    set: (v: string) => void
+  ): HTMLSelectElement {
+    const sel = parent.createEl("select", { cls: "dropdown" });
+    options.forEach((o) => {
+      const opt = sel.createEl("option", { text: o.label });
+      opt.value = o.value;
+      if (o.value === value) opt.selected = true;
+    });
+    sel.onchange = () => {
+      set(sel.value);
+      this.refreshValidity();
+    };
+    return sel;
+  }
+
+  private checkbox(
+    parent: HTMLElement,
+    label: string,
+    value: boolean,
+    set: (v: boolean) => void
+  ): void {
+    const wrap = parent.createEl("label", { cls: "me-check" });
+    const cb = wrap.createEl("input", { attr: { type: "checkbox" } });
+    cb.checked = value;
+    cb.onchange = () => {
+      set(cb.checked);
+      this.refreshValidity();
+    };
+    wrap.createSpan({ text: label });
+  }
+
   private renderFields(body: HTMLElement, op: EditOp): void {
     switch (op.kind) {
       case "fm-set":
@@ -153,6 +208,60 @@ export class OperationsPanel {
         );
         this.text(body, "value", op.value, (v) => (op.value = v));
         break;
+      case "fm-to-body": {
+        const row = body.createDiv({ cls: "me-op-row" });
+        this.text(row, "key", op.key, (v) => (op.key = v), "me-key", () =>
+          this.sources.frontmatterKeys()
+        );
+        this.select(
+          row,
+          [
+            { value: "append", label: "Append to body" },
+            { value: "prepend", label: "Prepend to body" },
+          ],
+          op.position,
+          (v) => (op.position = v as FmToBodyPosition)
+        );
+        // Format preset picker; "custom" keeps whatever is in the template box.
+        const presetSel = this.select(
+          body,
+          [
+            ...FM_TO_BODY_PRESETS.map((p) => ({ value: p.id, label: p.label })),
+            { value: "custom", label: "Custom rule…" },
+          ],
+          presetForTemplate(op.template)?.id ?? "custom",
+          () => {}
+        );
+        const ta = body.createEl("textarea", {
+          cls: "me-fm2body__tpl",
+          attr: { placeholder: "{{key}} / {{value}}", rows: "2" },
+        });
+        ta.value = op.template;
+        presetSel.onchange = () => {
+          const p = FM_TO_BODY_PRESETS.find((x) => x.id === presetSel.value);
+          if (p) {
+            op.template = p.template;
+            ta.value = p.template;
+          }
+          this.refreshValidity();
+        };
+        ta.oninput = () => {
+          op.template = ta.value;
+          presetSel.value = presetForTemplate(op.template)?.id ?? "custom";
+          this.refreshValidity();
+        };
+        body.createDiv({
+          cls: "me-op__hint",
+          text: "Placeholders: {{key}}, {{value}} (lists join with ', ').",
+        });
+        this.checkbox(
+          body,
+          "Remove the key from frontmatter",
+          op.removeKey,
+          (v) => (op.removeKey = v)
+        );
+        break;
+      }
       case "tag-add":
       case "tag-remove":
         this.text(
@@ -196,6 +305,60 @@ export class OperationsPanel {
         ta.value = op.text;
         ta.oninput = () => {
           op.text = ta.value;
+          this.refreshValidity();
+        };
+        break;
+      }
+      case "body-blank-lines": {
+        const rules = op.rules;
+        // Preset picker fills the rule set; toggling any rule → "custom".
+        const presetSel = this.select(
+          body,
+          [
+            ...BLANK_LINE_PRESETS.map((p) => ({ value: p.id, label: p.label })),
+            { value: "custom", label: "Custom rules…" },
+          ],
+          presetForRules(rules)?.id ?? "custom",
+          () => {}
+        );
+
+        const maxRow = body.createDiv({ cls: "me-op-row me-check" });
+        maxRow.createSpan({ text: "Max consecutive blank lines" });
+        const num = maxRow.createEl("input", {
+          cls: "me-flags",
+          attr: { type: "number", min: "0", step: "1" },
+        });
+        num.value = String(rules.maxConsecutive);
+
+        const toggles = body.createDiv({ cls: "me-op-checks" });
+        const syncPreset = () => {
+          presetSel.value = presetForRules(rules)?.id ?? "custom";
+        };
+
+        num.oninput = () => {
+          const n = parseInt(num.value, 10);
+          rules.maxConsecutive = Number.isNaN(n) || n < 0 ? 0 : n;
+          syncPreset();
+          this.refreshValidity();
+        };
+        type BoolRuleKey = Exclude<keyof typeof rules, "maxConsecutive">;
+        const check = (label: string, key: BoolRuleKey) =>
+          this.checkbox(toggles, label, rules[key], (v) => {
+            rules[key] = v;
+            syncPreset();
+          });
+        check("After a heading", "collapseAfterHeading");
+        check("Before a heading", "collapseBeforeHeading");
+        check("Between list items", "collapseListItems");
+        check("Between tasks", "collapseTasks");
+        check("Trim start/end of note", "trimEnds");
+
+        presetSel.onchange = () => {
+          const p = BLANK_LINE_PRESETS.find((x) => x.id === presetSel.value);
+          if (p) {
+            op.rules = { ...p.rules };
+            this.render();
+          }
           this.refreshValidity();
         };
         break;

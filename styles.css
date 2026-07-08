@@ -549,6 +549,39 @@ body.me-col-resizing {
   font-size: var(--font-ui-smaller);
   font-family: var(--font-monospace);
 }
+.me-op__hint {
+  width: 100%;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+.me-op-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+.me-op-fields .me-fm2body__tpl {
+  width: 100%;
+  min-height: 40px;
+}
+.me-op-checks {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+}
+.me-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-normal);
+}
+.me-check input[type="number"] {
+  width: 56px;
+  margin-left: auto;
+}
 
 /* ---- apply bar ---- */
 .me-apply {
