@@ -2,6 +2,7 @@ import type { App, TFile } from "obsidian";
 import { type EditOp, coerceValue, orderOps } from "./operations";
 import { normalizeBlankLines } from "./blanklines";
 import { renderFmTemplate } from "./frontmatter";
+import { type FmVarContext, renderFmValue } from "./variables";
 
 /** Text captured from a `fm-to-body` op during the frontmatter pass. */
 export type FmCaptures = Map<EditOp, string>;
@@ -34,6 +35,18 @@ function toStringArray(v: unknown): string[] {
 
 function ensureGlobal(flags: string): string {
   return flags.includes("g") ? flags : flags + "g";
+}
+
+/** Builds the per-file context used to resolve value placeholders. */
+function fmVarContext(file: TFile): FmVarContext {
+  return {
+    basename: file.basename,
+    path: file.path,
+    folder: file.parent?.path && file.parent.path !== "/" ? file.parent.path : "",
+    ctime: file.stat?.ctime ?? Date.now(),
+    mtime: file.stat?.mtime ?? Date.now(),
+    now: Date.now(),
+  };
 }
 
 /**
@@ -72,14 +85,16 @@ async function applyFrontmatterOps(
   ops: EditOp[],
   captures: FmCaptures
 ): Promise<void> {
+  const ctx = fmVarContext(file);
   await app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
     for (const op of ops) {
       switch (op.kind) {
         case "fm-set":
-          fm[op.key] = coerceValue(op.value, op.valueType);
+          fm[op.key] = coerceValue(renderFmValue(op.value, ctx), op.valueType);
           break;
         case "fm-add":
-          if (!(op.key in fm)) fm[op.key] = coerceValue(op.value, op.valueType);
+          if (!(op.key in fm))
+            fm[op.key] = coerceValue(renderFmValue(op.value, ctx), op.valueType);
           break;
         case "fm-delete":
           delete fm[op.key];

@@ -10,6 +10,7 @@ import {
   FM_TO_BODY_PRESETS,
   presetForTemplate,
 } from "../edit/frontmatter";
+import { FM_VARIABLES } from "../edit/variables";
 import {
   BLANK_LINE_PRESETS,
   DEFAULT_BLANK_LINE_RULES,
@@ -140,6 +141,22 @@ export class OperationsPanel {
     return el;
   }
 
+  /** Inserts text at the input's caret (or appends), then syncs the model. */
+  private insertAtCursor(
+    input: HTMLInputElement,
+    text: string,
+    set: (v: string) => void
+  ): void {
+    const start = input.selectionStart ?? input.value.length;
+    const end = input.selectionEnd ?? input.value.length;
+    input.value = input.value.slice(0, start) + text + input.value.slice(end);
+    const caret = start + text.length;
+    input.setSelectionRange(caret, caret);
+    input.focus();
+    set(input.value);
+    this.refreshValidity();
+  }
+
   private select(
     parent: HTMLElement,
     options: { value: string; label: string }[],
@@ -182,7 +199,7 @@ export class OperationsPanel {
         this.text(body, "key", op.key, (v) => (op.key = v), "me-key", () =>
           this.sources.frontmatterKeys()
         );
-        this.text(body, "value", op.value, (v) => (op.value = v));
+        const valueInput = this.text(body, "value", op.value, (v) => (op.value = v));
         const sel = body.createEl("select", { cls: "dropdown" });
         (["string", "number", "boolean", "list"] as FmValueType[]).forEach(
           (t) => {
@@ -195,6 +212,22 @@ export class OperationsPanel {
           op.valueType = sel.value as FmValueType;
           this.refreshValidity();
         };
+        // "Insert variable…" menu — appends a placeholder at the caret.
+        const varSel = body.createEl("select", { cls: "dropdown" });
+        varSel.createEl("option", { text: "Insert variable…" }).value = "";
+        FM_VARIABLES.forEach((v) => {
+          varSel.createEl("option", { text: v.label }).value = v.insert;
+        });
+        varSel.onchange = () => {
+          if (varSel.value) {
+            this.insertAtCursor(valueInput, varSel.value, (v) => (op.value = v));
+          }
+          varSel.value = "";
+        };
+        body.createDiv({
+          cls: "me-op__hint",
+          text: "Variables: {{title}}, {{path}}, {{folder}}, {{today}}, {{now}}, {{created}}, {{modified}} (dates accept :FORMAT, e.g. {{modified:YYYY/MM/DD}}).",
+        });
         break;
       }
       case "fm-delete":
