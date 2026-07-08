@@ -205,6 +205,31 @@ test("transformBody: prepend inserts before body (no frontmatter)", () => {
   assert.equal(out, "X\nhello");
 });
 
+test("transformBody: prepend inserts after frontmatter, not before it", () => {
+  const c = { n: 0 };
+  const content = "---\ntitle: x\n---\nhello";
+  const out = transformBody(fakeApp, fakeFile, content, [
+    { kind: "body-prepend", text: "X" },
+  ], "body", c);
+  assert.equal(out, "---\ntitle: x\n---\nX\nhello");
+});
+
+test("transformBody: fm-to-body prepend inserts after frontmatter", () => {
+  const c = { n: 0 };
+  const content = "---\ntitle: x\n---\nhello";
+  const captures = new Map();
+  const op = {
+    kind: "fm-to-body",
+    key: "title",
+    position: "prepend",
+    template: "{{value}}",
+    removeKey: false,
+  } as const;
+  captures.set(op, "x");
+  const out = transformBody(fakeApp, fakeFile, content, [op], "body", c, captures);
+  assert.equal(out, "---\ntitle: x\n---\nx\nhello");
+});
+
 test("transformBody: regex replaces and counts matches", () => {
   const c = { n: 0 };
   const out = transformBody(fakeApp, fakeFile, "foo foo bar", [
