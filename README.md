@@ -11,7 +11,9 @@ The UI inherits your active Obsidian theme.
 - **Visual query builder** with nested AND/OR groups and NOT.
 - **Two-phase search engine** (metadata → content) with three-valued (Kleene) logic — note bodies are read only where metadata alone can't decide. Fast even on thousands of notes.
 - **Fields:** tag, frontmatter (per key), body, name, path, location (folder + recursion), created/modified dates.
-- **Edit operations:** frontmatter set / add / delete / append-to-list, tag add / remove, body append / prepend, regex find & replace (capture groups `$1`).
+- **Edit operations:** frontmatter set / add / delete / append-to-list, **move a frontmatter key into the body**, tag add / remove, body append / prepend, regex find & replace (capture groups `$1`), and **remove duplicate blank lines**.
+- **Frontmatter → body:** convert a frontmatter entry into body text and append or prepend it, using a **format preset** (heading, bold label, Dataview inline field, bullet, blockquote, value only) or a **custom rule** with `{{key}}` / `{{value}}` placeholders — optionally removing the key afterwards.
+- **Blank-line cleanup:** collapse runs of duplicated empty lines (between paragraphs, after / before headings, between bullet list items, between tasks, and at the note's start / end). Pick a **preset** (collapse to single, tighten lists & tasks, hug headings, compact) or set **custom rules** (max consecutive blanks + per-spot toggles).
 - **Result selection** via checkboxes (all selected by default), with a live count.
 - **Configurable result columns:** show any metadata as table columns — frontmatter (per key), tags, file created / modified dates, folder path, and the note name itself. The header shows plain column titles; **click a title to edit** that column (type / frontmatter key), **drag** it to reorder, drag its right edge to **resize** (double-click to reset), and add columns with **+**. Each column can also list **OR fallbacks** — e.g. show frontmatter `author`, or `owner` when it's missing. The layout is remembered.
 - **Resizable results pane:** drag the bottom edge of the results list to make it taller or shorter.
@@ -39,7 +41,7 @@ Open it via the ribbon icon (⟳) or the command **Mass Editor: Open**.
 4. **Operations** — add one or more edit operations.
 5. **Apply** — an impact summary is shown; after confirmation a backup is created and the operations run.
 
-Operation order is fixed and deterministic: **frontmatter → tags → regex → append/prepend**.
+Operation order is fixed and deterministic: **frontmatter → tags → move-to-body → regex → append/prepend → blank-line cleanup** (the cleanup runs last so it also tidies text that earlier operations introduced).
 
 ## Backups and undo
 
@@ -70,7 +72,7 @@ Operation order is fixed and deterministic: **frontmatter → tags → regex →
 npm install
 npm run dev      # watch build → main.js
 npm run build    # typecheck + production bundle
-npm test         # unit tests (engine, operators, op ordering)
+npm test         # unit tests (engine, diff, blank-line & frontmatter helpers)
 ```
 
 Key modules: `src/query` (types, operators, evaluator, engine), `src/edit` (operations, applier, summary, diff, report), `src/backup` (backups + undo), `src/ui` (DOM components incl. shared diff renderer), `src/view` (main view).

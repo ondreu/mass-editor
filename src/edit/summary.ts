@@ -28,6 +28,12 @@ function describeOp(op: EditOp, n: number): string {
       return `${times} delete key \`${op.key}\``;
     case "fm-list-append":
       return `${times} append "${op.value}" to list \`${op.key}\``;
+    case "fm-to-body":
+      return `${times} move \`${op.key}\` to body (${op.position})${
+        op.removeKey ? ", removing the key" : ""
+      }`;
+    case "body-blank-lines":
+      return `${times} remove duplicate blank lines`;
     case "tag-add":
       return `${times} add tag #${op.tag.replace(/^#/, "")}`;
     case "tag-remove":
